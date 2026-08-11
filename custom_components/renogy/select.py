@@ -26,15 +26,6 @@ from .const import (
     DeviceType,
 )
 
-# Battery type options for display
-BATTERY_TYPE_OPTIONS = [
-    "custom",
-    "open",
-    "sealed",
-    "gel",
-    "lithium",
-]
-
 # Human-readable names for display
 BATTERY_TYPE_DISPLAY_NAMES = {
     "custom": "Custom",
@@ -134,7 +125,6 @@ class RenogyBatteryTypeSelect(SelectEntity):
         self.coordinator = coordinator
         self._device = device
         self.entity_description = description
-        self._device_type = device_type
         self._attr_options = list(BATTERY_TYPE_DISPLAY_NAMES.values())
         self._attr_current_option = None
 
@@ -273,7 +263,6 @@ class RenogyMaxCurrentSelect(SelectEntity):
         self.coordinator = coordinator
         self._device = device
         self.entity_description = description
-        self._device_type = device_type
         self._attr_options = MAX_CURRENT_OPTIONS
         self._attr_current_option = None
 

@@ -37,8 +37,6 @@ from .const import (
     DEFAULT_DEVICE_TYPE,
     DOMAIN,
     LOGGER,
-    RENOGY_BT_PREFIX,
-    RENOGY_INVERTER_PREFIX,
     DeviceType,
 )
 
@@ -221,7 +219,6 @@ SHUNT300_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_SHUNT_SOC),
     ),
     RenogyBLESensorDescription(
         key=KEY_SHUNT_ENERGY_CHARGED_TOTAL,
@@ -230,7 +227,6 @@ SHUNT300_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_SHUNT_ENERGY_CHARGED_TOTAL),
     ),
     RenogyBLESensorDescription(
         key=KEY_SHUNT_ENERGY_DISCHARGED_TOTAL,
@@ -239,7 +235,6 @@ SHUNT300_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_SHUNT_ENERGY_DISCHARGED_TOTAL),
     ),
     RenogyBLESensorDescription(
         key=KEY_SHUNT_STATUS,
@@ -257,25 +252,8 @@ SHUNT300_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
     ),
 )
 
-# DCC Parameter keys (readable settings)
+# DCC parameter keys exposed as sensors.
 KEY_SYSTEM_VOLTAGE = "system_voltage"
-KEY_OVERVOLTAGE_THRESHOLD = "overvoltage_threshold"
-KEY_CHARGING_LIMIT_VOLTAGE = "charging_limit_voltage"
-KEY_EQUALIZATION_VOLTAGE = "equalization_voltage"
-KEY_BOOST_VOLTAGE = "boost_voltage"
-KEY_FLOAT_VOLTAGE = "float_voltage"
-KEY_BOOST_RETURN_VOLTAGE = "boost_return_voltage"
-KEY_OVERDISCHARGE_RETURN_VOLTAGE = "overdischarge_return_voltage"
-KEY_UNDERVOLTAGE_WARNING = "undervoltage_warning"
-KEY_OVERDISCHARGE_VOLTAGE = "overdischarge_voltage"
-KEY_DISCHARGE_LIMIT_VOLTAGE = "discharge_limit_voltage"
-KEY_OVERDISCHARGE_DELAY = "overdischarge_delay"
-KEY_EQUALIZATION_TIME = "equalization_time"
-KEY_BOOST_TIME = "boost_time"
-KEY_EQUALIZATION_INTERVAL = "equalization_interval"
-KEY_TEMPERATURE_COMPENSATION = "temperature_compensation"
-KEY_REVERSE_CHARGING_VOLTAGE = "reverse_charging_voltage"
-KEY_SOLAR_CUTOFF_CURRENT = "solar_cutoff_current"
 
 
 BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
@@ -286,7 +264,6 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_BATTERY_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_CURRENT,
@@ -295,7 +272,6 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_BATTERY_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_PERCENTAGE,
@@ -304,7 +280,6 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_BATTERY_PERCENTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_TEMPERATURE,
@@ -313,13 +288,11 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_BATTERY_TEMPERATURE),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_TYPE,
         name="Battery Type",
         device_class=None,
-        value_fn=lambda data: data.get(KEY_BATTERY_TYPE),
     ),
     RenogyBLESensorDescription(
         key=KEY_CHARGING_AMP_HOURS_TODAY,
@@ -328,7 +301,6 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=None,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_CHARGING_AMP_HOURS_TODAY),
     ),
     RenogyBLESensorDescription(
         key=KEY_DISCHARGING_AMP_HOURS_TODAY,
@@ -337,13 +309,11 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=None,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_DISCHARGING_AMP_HOURS_TODAY),
     ),
     RenogyBLESensorDescription(
         key=KEY_CHARGING_STATUS,
         name="Charging Status",
         device_class=None,
-        value_fn=lambda data: data.get(KEY_CHARGING_STATUS),
     ),
 )
 
@@ -355,7 +325,6 @@ PV_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_PV_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_PV_CURRENT,
@@ -364,7 +333,6 @@ PV_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_PV_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_PV_POWER,
@@ -373,7 +341,6 @@ PV_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_PV_POWER),
     ),
     RenogyBLESensorDescription(
         key=KEY_MAX_CHARGING_POWER_TODAY,
@@ -382,7 +349,6 @@ PV_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_MAX_CHARGING_POWER_TODAY),
     ),
     RenogyBLESensorDescription(
         key=KEY_POWER_GENERATION_TODAY,
@@ -391,7 +357,6 @@ PV_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_POWER_GENERATION_TODAY),
     ),
     RenogyBLESensorDescription(
         key=KEY_POWER_GENERATION_TOTAL,
@@ -416,7 +381,6 @@ LOAD_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_LOAD_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_LOAD_CURRENT,
@@ -425,7 +389,6 @@ LOAD_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_LOAD_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_LOAD_POWER,
@@ -434,13 +397,11 @@ LOAD_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_LOAD_POWER),
     ),
     RenogyBLESensorDescription(
         key=KEY_LOAD_STATUS,
         name="Load Status",
         device_class=None,
-        value_fn=lambda data: data.get(KEY_LOAD_STATUS),
     ),
     RenogyBLESensorDescription(
         key=KEY_POWER_CONSUMPTION_TODAY,
@@ -449,7 +410,6 @@ LOAD_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_POWER_CONSUMPTION_TODAY),
     ),
 )
 
@@ -461,21 +421,18 @@ CONTROLLER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_CONTROLLER_TEMPERATURE),
     ),
     RenogyBLESensorDescription(
         key=KEY_DEVICE_ID,
         name="Device ID",
         device_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_DEVICE_ID),
     ),
     RenogyBLESensorDescription(
         key=KEY_MODEL,
         name="Model",
         device_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_MODEL),
     ),
     RenogyBLESensorDescription(
         key=KEY_MAX_DISCHARGING_POWER_TODAY,
@@ -484,7 +441,6 @@ CONTROLLER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_MAX_DISCHARGING_POWER_TODAY),
     ),
 )
 
@@ -498,7 +454,6 @@ DCC_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_BATTERY_SOC),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_VOLTAGE,
@@ -507,7 +462,6 @@ DCC_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_BATTERY_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_TOTAL_CHARGING_CURRENT,
@@ -516,13 +470,11 @@ DCC_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_TOTAL_CHARGING_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_TYPE,
         name="Battery Type",
         device_class=None,
-        value_fn=lambda data: data.get(KEY_BATTERY_TYPE),
     ),
     RenogyBLESensorDescription(
         key=KEY_CONTROLLER_TEMPERATURE,
@@ -531,7 +483,6 @@ DCC_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_CONTROLLER_TEMPERATURE),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_TEMPERATURE,
@@ -540,7 +491,6 @@ DCC_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_BATTERY_TEMPERATURE),
     ),
 )
 
@@ -552,7 +502,6 @@ DCC_ALTERNATOR_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_ALTERNATOR_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_ALTERNATOR_CURRENT,
@@ -561,7 +510,6 @@ DCC_ALTERNATOR_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_ALTERNATOR_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_ALTERNATOR_POWER,
@@ -570,7 +518,6 @@ DCC_ALTERNATOR_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_ALTERNATOR_POWER),
     ),
 )
 
@@ -582,7 +529,6 @@ DCC_SOLAR_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_SOLAR_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_SOLAR_CURRENT,
@@ -591,7 +537,6 @@ DCC_SOLAR_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_SOLAR_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_SOLAR_POWER,
@@ -600,7 +545,6 @@ DCC_SOLAR_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_SOLAR_POWER),
     ),
 )
 
@@ -609,13 +553,11 @@ DCC_STATUS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         key=KEY_DCC_CHARGING_STATUS,
         name="Charging Status",
         device_class=None,
-        value_fn=lambda data: data.get(KEY_DCC_CHARGING_STATUS),
     ),
     RenogyBLESensorDescription(
         key=KEY_CHARGING_MODE,
         name="Charging Mode",
         device_class=None,
-        value_fn=lambda data: data.get(KEY_CHARGING_MODE),
     ),
     RenogyBLESensorDescription(
         key=KEY_OUTPUT_POWER,
@@ -624,13 +566,11 @@ DCC_STATUS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_OUTPUT_POWER),
     ),
     RenogyBLESensorDescription(
         key=KEY_IGNITION_STATUS,
         name="Ignition Status",
         device_class=None,
-        value_fn=lambda data: data.get(KEY_IGNITION_STATUS),
     ),
 )
 
@@ -642,7 +582,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_DAILY_MIN_BATTERY_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_DAILY_MAX_BATTERY_VOLTAGE,
@@ -651,7 +590,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_DAILY_MAX_BATTERY_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_DAILY_MAX_CHARGING_CURRENT,
@@ -660,7 +598,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_DAILY_MAX_CHARGING_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_DAILY_MAX_CHARGING_POWER,
@@ -669,7 +606,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_DAILY_MAX_CHARGING_POWER),
     ),
     RenogyBLESensorDescription(
         key=KEY_DAILY_CHARGING_AH,
@@ -678,7 +614,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=None,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_DAILY_CHARGING_AH),
     ),
     RenogyBLESensorDescription(
         key=KEY_DAILY_POWER_GENERATION,
@@ -687,7 +622,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_DAILY_POWER_GENERATION),
     ),
     RenogyBLESensorDescription(
         key=KEY_TOTAL_OPERATING_DAYS,
@@ -696,7 +630,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=None,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_TOTAL_OPERATING_DAYS),
     ),
     RenogyBLESensorDescription(
         key=KEY_TOTAL_CHARGING_AH,
@@ -705,7 +638,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=None,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_TOTAL_CHARGING_AH),
     ),
     RenogyBLESensorDescription(
         key=KEY_TOTAL_POWER_GENERATION,
@@ -714,7 +646,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_TOTAL_POWER_GENERATION),
     ),
     RenogyBLESensorDescription(
         key=KEY_TOTAL_OVERDISCHARGE_COUNT,
@@ -724,7 +655,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_TOTAL_OVERDISCHARGE_COUNT),
     ),
     RenogyBLESensorDescription(
         key=KEY_TOTAL_FULL_CHARGE_COUNT,
@@ -734,7 +664,6 @@ DCC_STATISTICS_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_TOTAL_FULL_CHARGE_COUNT),
     ),
 )
 
@@ -744,14 +673,12 @@ DCC_DIAGNOSTIC_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         name="Device ID",
         device_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_DEVICE_ID),
     ),
     RenogyBLESensorDescription(
         key=KEY_MODEL,
         name="Model",
         device_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_MODEL),
     ),
     RenogyBLESensorDescription(
         key=KEY_SYSTEM_VOLTAGE,
@@ -760,32 +687,19 @@ DCC_DIAGNOSTIC_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_SYSTEM_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_FAULT_HIGH,
         name="Fault Code High",
         device_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_FAULT_HIGH),
     ),
     RenogyBLESensorDescription(
         key=KEY_FAULT_LOW,
         name="Fault Code Low",
         device_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_FAULT_LOW),
     ),
-)
-
-# All DCC sensors combined
-DCC_ALL_SENSORS = (
-    DCC_BATTERY_SENSORS
-    + DCC_ALTERNATOR_SENSORS
-    + DCC_SOLAR_SENSORS
-    + DCC_STATUS_SENSORS
-    + DCC_STATISTICS_SENSORS
-    + DCC_DIAGNOSTIC_SENSORS
 )
 
 # Inverter sensors
@@ -797,7 +711,6 @@ INVERTER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_BATTERY_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_AC_OUTPUT_VOLTAGE,
@@ -806,7 +719,6 @@ INVERTER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_AC_OUTPUT_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_AC_OUTPUT_CURRENT,
@@ -815,7 +727,6 @@ INVERTER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_AC_OUTPUT_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_AC_OUTPUT_FREQUENCY,
@@ -823,7 +734,6 @@ INVERTER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         native_unit_of_measurement="Hz",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_AC_OUTPUT_FREQUENCY),
     ),
     RenogyBLESensorDescription(
         key=KEY_INPUT_FREQUENCY,
@@ -831,7 +741,6 @@ INVERTER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         native_unit_of_measurement="Hz",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_INPUT_FREQUENCY),
     ),
     RenogyBLESensorDescription(
         key=KEY_LOAD_ACTIVE_POWER,
@@ -840,7 +749,6 @@ INVERTER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_LOAD_ACTIVE_POWER),
     ),
     RenogyBLESensorDescription(
         key=KEY_LOAD_APPARENT_POWER,
@@ -848,7 +756,6 @@ INVERTER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         native_unit_of_measurement="VA",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_LOAD_APPARENT_POWER),
     ),
     RenogyBLESensorDescription(
         key=KEY_TEMPERATURE,
@@ -857,21 +764,18 @@ INVERTER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_TEMPERATURE),
     ),
     RenogyBLESensorDescription(
         key=KEY_DEVICE_ID,
         name="Device ID",
         device_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_DEVICE_ID),
     ),
     RenogyBLESensorDescription(
         key=KEY_MODEL,
         name="Model",
         device_class=None,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_MODEL),
     ),
 )
 
@@ -883,7 +787,6 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_BATTERY_VOLTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_CURRENT,
@@ -892,7 +795,6 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get(KEY_BATTERY_CURRENT),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_POWER,
@@ -901,7 +803,6 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_BATTERY_POWER),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_PERCENTAGE,
@@ -910,7 +811,6 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_BATTERY_PERCENTAGE),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_TEMPERATURE,
@@ -919,7 +819,6 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get(KEY_BATTERY_TEMPERATURE),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_REMAINING_CAPACITY,
@@ -927,7 +826,6 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         native_unit_of_measurement="Ah",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_BATTERY_REMAINING_CAPACITY),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_CAPACITY,
@@ -935,21 +833,18 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         native_unit_of_measurement="Ah",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_BATTERY_CAPACITY),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_CYCLE_COUNT,
         name="Cycle Count",
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_BATTERY_CYCLE_COUNT),
     ),
     RenogyBLESensorDescription(
         key=KEY_CELL_COUNT,
         name="Cell Count",
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=0,
-        value_fn=lambda data: data.get(KEY_CELL_COUNT),
     ),
     RenogyBLESensorDescription(
         key=KEY_CELL_VOLTAGE_MIN,
@@ -959,7 +854,6 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_CELL_VOLTAGE_MIN),
     ),
     RenogyBLESensorDescription(
         key=KEY_CELL_VOLTAGE_MAX,
@@ -969,7 +863,6 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_CELL_VOLTAGE_MAX),
     ),
     RenogyBLESensorDescription(
         key=KEY_CELL_VOLTAGE_DELTA,
@@ -979,30 +872,23 @@ RENOGY_BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=3,
-        value_fn=lambda data: data.get(KEY_CELL_VOLTAGE_DELTA),
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_PROBLEM_CODE,
         name="Problem Code",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_BATTERY_PROBLEM_CODE),
     ),
     RenogyBLESensorDescription(
         key=KEY_MODEL,
         name="Model",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_MODEL),
     ),
     RenogyBLESensorDescription(
         key=KEY_SW_VERSION,
         name="Software Version",
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_SW_VERSION),
     ),
 )
-
-# All sensors combined (for controller type)
-ALL_SENSORS = BATTERY_SENSORS + PV_SENSORS + LOAD_SENSORS + CONTROLLER_SENSORS
 
 # Sensor mapping by device type
 SENSORS_BY_DEVICE_TYPE = {
@@ -1047,22 +933,18 @@ async def async_setup_entry(
     device_type = config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
     LOGGER.debug("Setting up sensors for device type: %s", device_type)
 
-    # Now create entities with the best name we have
-    if coordinator.device and (
-        coordinator.device.name.startswith(RENOGY_BT_PREFIX)
-        or coordinator.device.name.startswith(RENOGY_INVERTER_PREFIX)
-        or not coordinator.device.name.startswith("Unknown")
-    ):
-        LOGGER.info("Creating entities with device name: %s", coordinator.device.name)
-        device_entities = create_device_entities(
-            coordinator, coordinator.device, device_type
-        )
+    # Create entities with the best name currently available.
+    device = coordinator.device
+    if device and not device.name.startswith("Unknown"):
+        LOGGER.info("Creating entities with device name: %s", device.name)
     else:
         LOGGER.debug(
             "Creating sensor entities without waiting for a resolved device name"
         )
         LOGGER.info("Creating entities with coordinator only (generic name)")
-        device_entities = create_coordinator_entities(coordinator, device_type)
+        device = None
+
+    device_entities = create_entities_helper(coordinator, device, device_type)
 
     # Add all entities to Home Assistant
     if device_entities:
@@ -1094,27 +976,6 @@ def create_entities_helper(
             )
             entities.append(sensor)
 
-    return entities
-
-
-def create_coordinator_entities(
-    coordinator: RenogyActiveBluetoothCoordinator,
-    device_type: str = DEFAULT_DEVICE_TYPE,
-) -> List[RenogyBLESensor]:
-    """Create sensor entities with just the coordinator (no device yet)."""
-    entities = create_entities_helper(coordinator, None, device_type)
-    LOGGER.info("Created %s entities with coordinator only", len(entities))
-    return entities
-
-
-def create_device_entities(
-    coordinator: RenogyActiveBluetoothCoordinator,
-    device: RenogyBLEDevice,
-    device_type: str = DEFAULT_DEVICE_TYPE,
-) -> List[RenogyBLESensor]:
-    """Create sensor entities for a device."""
-    entities = create_entities_helper(coordinator, device, device_type)
-    LOGGER.info("Created %s entities for device %s", len(entities), device.name)
     return entities
 
 
@@ -1296,42 +1157,41 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
             return None
 
         try:
-            if self.entity_description.value_fn:
-                value = self.entity_description.value_fn(data)
-                if (
-                    value is not None
-                    and self.entity_description.key in ENERGY_COUNTER_KEYS
-                ):
-                    value = self._apply_energy_reset_handling(value)
-                # Basic type validation based on device_class
-                if value is not None:
-                    if self.device_class in [
-                        SensorDeviceClass.VOLTAGE,
-                        SensorDeviceClass.CURRENT,
-                        SensorDeviceClass.TEMPERATURE,
-                        SensorDeviceClass.POWER,
-                    ]:
-                        try:
-                            value = float(value)
-                            # Basic range validation
-                            if value < -1000 or value > 10000:
-                                LOGGER.warning(
-                                    "Value %s out of reasonable range for %s",
-                                    value,
-                                    self.name,
-                                )
-                                return None
-                        except ValueError, TypeError:
-                            LOGGER.warning(
-                                "Invalid numeric value for %s: %s",
-                                self.name,
-                                value,
-                            )
-                            return None
+            value = (
+                self.entity_description.value_fn(data)
+                if self.entity_description.value_fn
+                else data.get(self.entity_description.key)
+            )
+            if value is not None and self.entity_description.key in ENERGY_COUNTER_KEYS:
+                value = self._apply_energy_reset_handling(value)
+            # Basic type validation based on device_class
+            if value is not None and self.device_class in [
+                SensorDeviceClass.VOLTAGE,
+                SensorDeviceClass.CURRENT,
+                SensorDeviceClass.TEMPERATURE,
+                SensorDeviceClass.POWER,
+            ]:
+                try:
+                    value = float(value)
+                    # Basic range validation
+                    if value < -1000 or value > 10000:
+                        LOGGER.warning(
+                            "Value %s out of reasonable range for %s",
+                            value,
+                            self.name,
+                        )
+                        return None
+                except ValueError, TypeError:
+                    LOGGER.warning(
+                        "Invalid numeric value for %s: %s",
+                        self.name,
+                        value,
+                    )
+                    return None
 
-                # Cache the value
-                self._attr_native_value = value
-                return value
+            # Cache the value
+            self._attr_native_value = value
+            return value
         except Exception as e:
             LOGGER.warning("Error getting native value for %s: %s", self.name, e)
         return None
