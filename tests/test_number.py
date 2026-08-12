@@ -164,6 +164,30 @@ def _load_number_module() -> Any:
     return importlib.import_module("custom_components.renogy.number")
 
 
+def test_number_reads_value_directly_from_description_key() -> None:
+    """Number descriptions should use their key for the current value."""
+    number_module = _load_number_module()
+    description = next(
+        description
+        for description in number_module.DCC_OTHER_NUMBERS
+        if description.key == "solar_cutoff_current"
+    )
+
+    coordinator = MagicMock()
+    coordinator.address = "AA:BB:CC:DD:EE:FF"
+    coordinator.device = None
+    coordinator.data = {"solar_cutoff_current": 7.5}
+
+    entity = number_module.RenogyNumberEntity(
+        coordinator=coordinator,
+        device=None,
+        description=description,
+        device_type=number_module.DeviceType.DCC.value,
+    )
+
+    assert entity.native_value == 7.5
+
+
 def test_solar_cutoff_current_writes_centiamps() -> None:
     """Ensure a solar cutoff value in amps is written as centiamps."""
     number_module = _load_number_module()

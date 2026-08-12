@@ -255,6 +255,22 @@ def _load_sensor_module() -> Any:
     return importlib.import_module("custom_components.renogy.sensor")
 
 
+def _read_sensor_value(
+    sensor_module: Any, description: Any, data: dict[str, Any]
+) -> Any:
+    """Return a sensor value through the entity's production lookup path."""
+    coordinator = MagicMock()
+    coordinator.address = "AA:BB:CC:DD:EE:FF"
+    coordinator.device = None
+    coordinator.data = data
+    entity = sensor_module.RenogyBLESensor(
+        coordinator=coordinator,
+        device=None,
+        description=description,
+    )
+    return entity.native_value
+
+
 def test_sensor_setup_does_not_wait_for_named_shunt() -> None:
     """Ensure setup skips refresh/wait loop when shunt name is already available."""
     sensor_module = _load_sensor_module()
@@ -279,15 +295,17 @@ def test_sensor_setup_does_not_wait_for_named_shunt() -> None:
 
     async_add_entities = MagicMock()
 
-    with patch.object(sensor_module, "create_device_entities", return_value=[]):
-        with patch.object(
-            sensor_module, "create_coordinator_entities", return_value=[]
-        ):
-            asyncio.run(
-                sensor_module.async_setup_entry(hass, config_entry, async_add_entities)
-            )
+    with patch.object(
+        sensor_module, "create_entities_helper", return_value=[]
+    ) as create:
+        asyncio.run(
+            sensor_module.async_setup_entry(hass, config_entry, async_add_entities)
+        )
 
     coordinator.async_request_refresh.assert_not_awaited()
+    create.assert_called_once_with(
+        coordinator, device, sensor_module.DeviceType.SHUNT300.value
+    )
     async_add_entities.assert_not_called()
 
 
@@ -311,19 +329,18 @@ def test_sensor_setup_does_not_wait_for_unknown_device_name() -> None:
 
     async_add_entities = MagicMock()
 
-    with patch.object(sensor_module, "create_device_entities", return_value=[]):
-        with patch.object(
-            sensor_module,
-            "create_coordinator_entities",
-            return_value=["entity"],
-        ) as create_coordinator_entities:
-            asyncio.run(
-                sensor_module.async_setup_entry(hass, config_entry, async_add_entities)
-            )
+    with patch.object(
+        sensor_module,
+        "create_entities_helper",
+        return_value=["entity"],
+    ) as create:
+        asyncio.run(
+            sensor_module.async_setup_entry(hass, config_entry, async_add_entities)
+        )
 
     coordinator.async_request_refresh.assert_not_awaited()
-    create_coordinator_entities.assert_called_once_with(
-        coordinator, sensor_module.DeviceType.CONTROLLER.value
+    create.assert_called_once_with(
+        coordinator, None, sensor_module.DeviceType.CONTROLLER.value
     )
     async_add_entities.assert_called_once_with(["entity"])
 
@@ -665,16 +682,18 @@ def test_inverter_sensor_mapping_uses_library_field_names() -> None:
         sensor_module.KEY_MODEL: "RIV1220PU-126",
     }
 
-    assert descriptions[sensor_module.KEY_BATTERY_VOLTAGE].value_fn(sample_data) == 40.0
-    assert (
-        descriptions[sensor_module.KEY_AC_OUTPUT_VOLTAGE].value_fn(sample_data) == 230.0
-    )
-    assert (
-        descriptions[sensor_module.KEY_LOAD_ACTIVE_POWER].value_fn(sample_data) == 500
-    )
-    assert (
-        descriptions[sensor_module.KEY_MODEL].value_fn(sample_data) == "RIV1220PU-126"
-    )
+    expected_values = {
+        sensor_module.KEY_BATTERY_VOLTAGE: 40.0,
+        sensor_module.KEY_AC_OUTPUT_VOLTAGE: 230.0,
+        sensor_module.KEY_LOAD_ACTIVE_POWER: 500,
+        sensor_module.KEY_MODEL: "RIV1220PU-126",
+    }
+    for key, expected in expected_values.items():
+        assert descriptions[key].value_fn is None
+        assert (
+            _read_sensor_value(sensor_module, descriptions[key], sample_data)
+            == expected
+        )
 
 
 def test_battery_sensor_mapping_uses_library_field_names() -> None:
@@ -703,11 +722,17 @@ def test_battery_sensor_mapping_uses_library_field_names() -> None:
         sensor_module.KEY_SW_VERSION: "2.10",
     }
 
-    assert descriptions[sensor_module.KEY_BATTERY_VOLTAGE].value_fn(sample_data) == 51.2
-    assert descriptions[sensor_module.KEY_BATTERY_POWER].value_fn(sample_data) == 631.8
-    assert descriptions[sensor_module.KEY_BATTERY_CAPACITY].value_fn(sample_data) == 100
-    assert descriptions[sensor_module.KEY_CELL_COUNT].value_fn(sample_data) == 4
-    assert (
-        descriptions[sensor_module.KEY_CELL_VOLTAGE_DELTA].value_fn(sample_data) == 0.3
-    )
-    assert descriptions[sensor_module.KEY_SW_VERSION].value_fn(sample_data) == "2.10"
+    expected_values = {
+        sensor_module.KEY_BATTERY_VOLTAGE: 51.2,
+        sensor_module.KEY_BATTERY_POWER: 631.8,
+        sensor_module.KEY_BATTERY_CAPACITY: 100,
+        sensor_module.KEY_CELL_COUNT: 4,
+        sensor_module.KEY_CELL_VOLTAGE_DELTA: 0.3,
+        sensor_module.KEY_SW_VERSION: "2.10",
+    }
+    for key, expected in expected_values.items():
+        assert descriptions[key].value_fn is None
+        assert (
+            _read_sensor_value(sensor_module, descriptions[key], sample_data)
+            == expected
+        )
