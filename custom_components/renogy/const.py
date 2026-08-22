@@ -15,11 +15,13 @@ MAX_SCAN_INTERVAL = 600  # seconds
 # Renogy BT-1 and BT-2 module identifiers - devices advertise with these prefixes
 RENOGY_BT_PREFIX = "BT-TH-"
 RENOGY_INVERTER_PREFIX = "RNGRIU"
+RENOGY_REGO_INVERTER_PREFIX = "BTRIC"
 RENOGY_BATTERY_PRO_PREFIXES = ("RNGRBP", "RNGC", "RNGPRO")
 
 # Configuration parameters
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_DEVICE_TYPE = "device_type"  # New constant for device type
+CONF_DEVICE_NAME = "device_name"
 CONF_SHUNT_CONNECTION_MODE = "shunt_connection_mode"
 CONF_NON_SHUNT_CONNECTION_MODE = "non_shunt_connection_mode"
 CONF_COMMUNICATION_HUB_ENABLED = "communication_hub_enabled"
@@ -97,6 +99,16 @@ class DCCRegister:
     TEMPERATURE_COMPENSATION = 0xE014
     REVERSE_CHARGING_VOLTAGE = 0xE020
     SOLAR_CUTOFF_CURRENT = 0xE038
+
+
+# REGO-series inverter setting registers (for write operations)
+class InverterRegister:
+    """Modbus registers for REGO-series inverter settings (function 0x06, value x10)."""
+
+    CHARGE_CURRENT = 0x1146
+    LOW_VOLTAGE_WARN = 0x114E
+    BATTERY_OVER_VOLTAGE = 0x1164
+    AC_INPUT_CURRENT_LIMIT = 0x1168
 
 
 # DCC Battery Type Values
