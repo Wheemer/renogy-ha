@@ -251,6 +251,7 @@ def _load_sensor_module() -> Any:
     """Load the sensor module with stubs in place."""
     _install_module_stubs()
     sys.modules.pop("custom_components.renogy.sensor", None)
+    sys.modules.pop("custom_components.renogy.const", None)
     sys.modules.pop("custom_components.renogy", None)
     return importlib.import_module("custom_components.renogy.sensor")
 
@@ -759,3 +760,52 @@ def test_battery_sensor_mapping_uses_library_field_names() -> None:
             _read_sensor_value(sensor_module, descriptions[key], sample_data)
             == expected
         )
+
+
+def test_sensor_setup_registers_hub_battery_sensor_layer() -> None:
+    """Ensure the sensor platform activates the logical Hub battery layer."""
+    sensor_module = _load_sensor_module()
+
+    coordinator = MagicMock()
+    coordinator.device = None
+    coordinator.address = "F0:F8:F2:57:47:0D"
+
+    hass = MagicMock()
+    hass.data = {
+        sensor_module.DOMAIN: {
+            "entry-1": {
+                "coordinator": coordinator,
+            }
+        }
+    }
+
+    config_entry = MagicMock()
+    config_entry.entry_id = "entry-1"
+    config_entry.data = {
+        sensor_module.CONF_DEVICE_TYPE: sensor_module.DeviceType.INVERTER.value
+    }
+
+    async_add_entities = MagicMock()
+
+    with patch.object(
+        sensor_module,
+        "create_entities_helper",
+        return_value=[],
+    ):
+        with patch.object(
+            sensor_module,
+            "setup_hub_battery_sensors",
+        ) as setup_hub:
+            asyncio.run(
+                sensor_module.async_setup_entry(
+                    hass,
+                    config_entry,
+                    async_add_entities,
+                )
+            )
+
+    setup_hub.assert_called_once_with(
+        config_entry,
+        coordinator,
+        async_add_entities,
+    )

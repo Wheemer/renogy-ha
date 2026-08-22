@@ -22,6 +22,8 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_DEVICE_TYPE = "device_type"  # New constant for device type
 CONF_SHUNT_CONNECTION_MODE = "shunt_connection_mode"
 CONF_NON_SHUNT_CONNECTION_MODE = "non_shunt_connection_mode"
+CONF_COMMUNICATION_HUB_ENABLED = "communication_hub_enabled"
+DEFAULT_COMMUNICATION_HUB_ENABLED = False
 
 # Device info
 ATTR_MANUFACTURER = "Renogy"

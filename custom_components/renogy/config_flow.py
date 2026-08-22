@@ -18,9 +18,11 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_ADDRESS, CONF_SCAN_INTERVAL
 
 from .const import (
+    CONF_COMMUNICATION_HUB_ENABLED,
     CONF_DEVICE_TYPE,
     CONF_NON_SHUNT_CONNECTION_MODE,
     CONF_SHUNT_CONNECTION_MODE,
+    DEFAULT_COMMUNICATION_HUB_ENABLED,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_NON_SHUNT_CONNECTION_MODE,
     DEFAULT_SCAN_INTERVAL,
@@ -90,14 +92,21 @@ def _build_shunt_options_schema(default_mode: str) -> vol.Schema:
     )
 
 
-def _build_non_shunt_options_schema(default_mode: str) -> vol.Schema:
-    """Build the non-shunt connection mode schema."""
+def _build_non_shunt_options_schema(
+    default_mode: str,
+    default_hub_enabled: bool,
+) -> vol.Schema:
+    """Build non-shunt connection and Communication Hub options."""
     return vol.Schema(
         {
             vol.Required(
                 CONF_NON_SHUNT_CONNECTION_MODE,
                 default=default_mode,
-            ): vol.In(NON_SHUNT_CONNECTION_MODES)
+            ): vol.In(NON_SHUNT_CONNECTION_MODES),
+            vol.Required(
+                CONF_COMMUNICATION_HUB_ENABLED,
+                default=default_hub_enabled,
+            ): bool,
         }
     )
 
@@ -383,7 +392,14 @@ class RenogyOptionsFlowHandler(OptionsFlow):
             CONF_NON_SHUNT_CONNECTION_MODE,
             DEFAULT_NON_SHUNT_CONNECTION_MODE,
         )
+        current_hub_enabled = self._config_entry.options.get(
+            CONF_COMMUNICATION_HUB_ENABLED,
+            DEFAULT_COMMUNICATION_HUB_ENABLED,
+        )
         return self.async_show_form(
             step_id="init",
-            data_schema=_build_non_shunt_options_schema(current_mode),
+            data_schema=_build_non_shunt_options_schema(
+                current_mode,
+                current_hub_enabled,
+            ),
         )

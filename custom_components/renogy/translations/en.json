@@ -33,7 +33,8 @@
       "init": {
         "data": {
           "shunt_connection_mode": "Smart Shunt connection mode",
-          "non_shunt_connection_mode": "Non-shunt connection mode"
+          "non_shunt_connection_mode": "Non-shunt connection mode",
+          "communication_hub_enabled": "Communication Hub / multiple batteries"
         }
       }
     }

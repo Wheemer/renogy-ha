@@ -11,10 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import async_get as async_get_device_registry
 
 from .const import (
+    CONF_COMMUNICATION_HUB_ENABLED,
     CONF_DEVICE_TYPE,
     CONF_NON_SHUNT_CONNECTION_MODE,
     CONF_SCAN_INTERVAL,
     CONF_SHUNT_CONNECTION_MODE,
+    DEFAULT_COMMUNICATION_HUB_ENABLED,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_NON_SHUNT_CONNECTION_MODE,
     DEFAULT_SCAN_INTERVAL,
@@ -51,6 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_type = entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
     shunt_connection_mode = _get_shunt_connection_mode(entry)
     non_shunt_connection_mode = _get_non_shunt_connection_mode(entry)
+    communication_hub_enabled = _get_communication_hub_enabled(entry)
 
     if not device_address:
         LOGGER.error("No device address provided in config entry")
@@ -58,25 +61,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     LOGGER.info(
         "Configuring Renogy BLE device %s as %s with scan interval %ss "
-        "(shunt mode: %s, non-shunt mode: %s)",
+        "(shunt mode: %s, non-shunt mode: %s, communication hub: %s)",
         device_address,
         device_type,
         scan_interval,
         shunt_connection_mode,
         non_shunt_connection_mode,
+        "enabled" if communication_hub_enabled else "disabled",
     )
 
-    # Create a coordinator for this entry
-    coordinator = RenogyActiveBluetoothCoordinator(
-        hass=hass,
-        logger=LOGGER,
-        address=device_address,
-        scan_interval=scan_interval,
-        device_type=device_type,
-        shunt_connection_mode=shunt_connection_mode,
-        non_shunt_connection_mode=non_shunt_connection_mode,
-        device_data_callback=lambda device: _handle_device_update(hass, entry, device),
-    )
+    async def device_data_callback(device: RenogyBLEDevice) -> None:
+        """Forward coordinator device updates to the integration handler."""
+        await _handle_device_update(hass, entry, device)
+
+    if communication_hub_enabled:
+        from .hub_coordinator import RenogyHubBluetoothCoordinator
+
+        coordinator = RenogyHubBluetoothCoordinator(
+            hass=hass,
+            logger=LOGGER,
+            address=device_address,
+            scan_interval=scan_interval,
+            device_type=device_type,
+            shunt_connection_mode=shunt_connection_mode,
+            non_shunt_connection_mode=non_shunt_connection_mode,
+            device_data_callback=device_data_callback,
+            communication_hub_enabled=True,
+        )
+    else:
+        coordinator = RenogyActiveBluetoothCoordinator(
+            hass=hass,
+            logger=LOGGER,
+            address=device_address,
+            scan_interval=scan_interval,
+            device_type=device_type,
+            shunt_connection_mode=shunt_connection_mode,
+            non_shunt_connection_mode=non_shunt_connection_mode,
+            device_data_callback=device_data_callback,
+        )
+
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     # Store coordinator and devices in hass.data
@@ -128,6 +151,20 @@ def _get_non_shunt_connection_mode(entry: ConfigEntry) -> str:
     return entry.options.get(
         CONF_NON_SHUNT_CONNECTION_MODE,
         DEFAULT_NON_SHUNT_CONNECTION_MODE,
+    )
+
+
+def _get_communication_hub_enabled(entry: ConfigEntry) -> bool:
+    """Return whether Communication Hub battery polling is enabled."""
+    device_type = entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
+    if device_type == DeviceType.SHUNT300.value:
+        return False
+
+    return bool(
+        entry.options.get(
+            CONF_COMMUNICATION_HUB_ENABLED,
+            DEFAULT_COMMUNICATION_HUB_ENABLED,
+        )
     )
 
 

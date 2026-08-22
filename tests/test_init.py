@@ -13,6 +13,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 def _install_module_stubs(*, install_ble: bool = True) -> type | None:
     """Install minimal module stubs to import the integration module."""
+    # Any focused test may have loaded integration constants through a synthetic
+    # custom_components.renogy package. Always force the production const module
+    # to be imported afresh before loading the real integration package.
+    sys.modules.pop("custom_components.renogy.const", None)
+
     homeassistant_module = cast(Any, types.ModuleType("homeassistant"))
     sys.modules["homeassistant"] = homeassistant_module
 
