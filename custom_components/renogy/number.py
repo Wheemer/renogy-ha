@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Optional
 
 from homeassistant.components.number import (
     NumberDeviceClass,
@@ -39,7 +39,6 @@ class RenogyNumberEntityDescription(NumberEntityDescription):
     """Describes a Renogy number entity."""
 
     register: int = 0
-    value_fn: Optional[Callable[[dict[str, Any]], Any]] = None
     # Scale factor: device value = HA value * scale
     scale: float = 1.0
 
@@ -58,7 +57,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.OVERVOLTAGE_THRESHOLD,
         scale=10.0,  # 14.0V -> 140
-        value_fn=lambda data: data.get("overvoltage_threshold"),
     ),
     RenogyNumberEntityDescription(
         key="charging_limit_voltage",
@@ -72,7 +70,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.CHARGING_LIMIT_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("charging_limit_voltage"),
     ),
     RenogyNumberEntityDescription(
         key="equalization_voltage",
@@ -86,7 +83,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.EQUALIZATION_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("equalization_voltage"),
     ),
     RenogyNumberEntityDescription(
         key="boost_voltage",
@@ -100,7 +96,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.BOOST_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("boost_voltage"),
     ),
     RenogyNumberEntityDescription(
         key="float_voltage",
@@ -114,7 +109,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.FLOAT_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("float_voltage"),
     ),
     RenogyNumberEntityDescription(
         key="boost_return_voltage",
@@ -128,7 +122,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.BOOST_RETURN_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("boost_return_voltage"),
     ),
     RenogyNumberEntityDescription(
         key="overdischarge_return_voltage",
@@ -142,7 +135,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.OVERDISCHARGE_RETURN_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("overdischarge_return_voltage"),
     ),
     RenogyNumberEntityDescription(
         key="undervoltage_warning",
@@ -156,7 +148,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.UNDERVOLTAGE_WARNING,
         scale=10.0,
-        value_fn=lambda data: data.get("undervoltage_warning"),
     ),
     RenogyNumberEntityDescription(
         key="overdischarge_voltage",
@@ -170,7 +161,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.OVERDISCHARGE_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("overdischarge_voltage"),
     ),
     RenogyNumberEntityDescription(
         key="discharge_limit_voltage",
@@ -184,7 +174,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.DISCHARGE_LIMIT_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("discharge_limit_voltage"),
     ),
     RenogyNumberEntityDescription(
         key="reverse_charging_voltage",
@@ -198,7 +187,6 @@ DCC_VOLTAGE_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.REVERSE_CHARGING_VOLTAGE,
         scale=10.0,
-        value_fn=lambda data: data.get("reverse_charging_voltage"),
     ),
 )
 
@@ -215,7 +203,6 @@ DCC_TIME_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.OVERDISCHARGE_DELAY,
         scale=1.0,
-        value_fn=lambda data: data.get("overdischarge_delay"),
     ),
     RenogyNumberEntityDescription(
         key="equalization_time",
@@ -228,7 +215,6 @@ DCC_TIME_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.EQUALIZATION_TIME,
         scale=1.0,
-        value_fn=lambda data: data.get("equalization_time"),
     ),
     RenogyNumberEntityDescription(
         key="boost_time",
@@ -241,7 +227,6 @@ DCC_TIME_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.BOOST_TIME,
         scale=1.0,
-        value_fn=lambda data: data.get("boost_time"),
     ),
     RenogyNumberEntityDescription(
         key="equalization_interval",
@@ -254,7 +239,6 @@ DCC_TIME_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.EQUALIZATION_INTERVAL,
         scale=1.0,
-        value_fn=lambda data: data.get("equalization_interval"),
     ),
 )
 
@@ -271,7 +255,6 @@ DCC_OTHER_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.TEMPERATURE_COMPENSATION,
         scale=1.0,
-        value_fn=lambda data: data.get("temperature_compensation"),
     ),
     RenogyNumberEntityDescription(
         key="solar_cutoff_current",
@@ -284,8 +267,7 @@ DCC_OTHER_NUMBERS: tuple[RenogyNumberEntityDescription, ...] = (
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
         register=DCCRegister.SOLAR_CUTOFF_CURRENT,
-        scale=1.0,
-        value_fn=lambda data: data.get("solar_cutoff_current"),
+        scale=100.0,  # 7.0A -> 700 centiamps
     ),
 )
 
@@ -351,7 +333,6 @@ class RenogyNumberEntity(NumberEntity):
         self.coordinator = coordinator
         self._device = device
         self.entity_description = description
-        self._device_type = device_type
         self._attr_native_value = None
 
         # Device-dependent properties
@@ -390,10 +371,10 @@ class RenogyNumberEntity(NumberEntity):
         elif self.coordinator.data:
             data = self.coordinator.data
 
-        if not data or not self.entity_description.value_fn:
+        if not data:
             return None
 
-        value = self.entity_description.value_fn(data)
+        value = data.get(self.entity_description.key)
         if value is not None:
             self._attr_native_value = float(value)
         return self._attr_native_value
