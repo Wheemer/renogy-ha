@@ -394,13 +394,37 @@ class RenogyActiveBluetoothCoordinator(
         """Start polling."""
         self.logger.debug("Starting polling for device %s", self.address)
 
+        unsub_started: Callable[[], None] | None = None
+
         def _unsub() -> None:
             """Unsubscribe from updates."""
+            nonlocal unsub_started
+            if unsub_started is not None:
+                unsub_started()
+                unsub_started = None
             if self._unsub_refresh:
                 self._unsub_refresh()
                 self._unsub_refresh = None
 
         _unsub()  # Cancel any previous subscriptions
+
+        if getattr(self.hass, "state", None) != CoreState.running:
+            self.logger.info(
+                "Deferring Renogy BLE polling for %s until Home Assistant has started",
+                self.address,
+            )
+
+            @callback
+            def _async_started(_event: Any) -> None:
+                nonlocal unsub_started
+                unsub_started = None
+                self.async_start()
+
+            unsub_started = self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED,
+                _async_started,
+            )
+            return _unsub
 
         if self._uses_sustained_shunt_listener():
             create_task = getattr(self.hass, "async_create_background_task", None)
