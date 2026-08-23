@@ -99,6 +99,7 @@ SHUNT_STARTUP_READY_TIMEOUT_SECONDS = 30.0
 CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS = 60
 CONTROLLER_LIVE_COMMAND_NAMES = ("pv",)
 CONTROLLER_STATIC_COMMAND_NAMES = ("device_info", "device_id", "battery")
+CONTROLLER_STATIC_RESULT_KEYS = ("model", "device_id", "battery_type")
 
 
 class RenogyActiveBluetoothCoordinator(
@@ -171,6 +172,7 @@ class RenogyActiveBluetoothCoordinator(
         # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
         self._connection_in_progress = False
+        self._last_controller_static_attempt = 0.0
         self._last_controller_static_refresh = 0.0
 
         # Warn only once when the reported model contradicts the configured type
@@ -228,10 +230,11 @@ class RenogyActiveBluetoothCoordinator(
             return None, False
 
         now = time.monotonic()
+        last_static_attempt = self._last_controller_static_attempt
         static_due = (
             not self.data
-            or self._last_controller_static_refresh == 0.0
-            or now - self._last_controller_static_refresh
+            or last_static_attempt == 0.0
+            or now - last_static_attempt
             >= CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS
         )
 
@@ -245,6 +248,10 @@ class RenogyActiveBluetoothCoordinator(
             if name in controller_commands
         }
         return commands or None, static_due
+
+    def _controller_static_data_refreshed(self, parsed_data: dict[str, Any]) -> bool:
+        """Return whether this poll actually yielded controller static data."""
+        return any(key in parsed_data for key in CONTROLLER_STATIC_RESULT_KEYS)
 
     def _uses_sustained_shunt_listener(self, device_type: str | None = None) -> bool:
         """Return whether this coordinator should keep a sustained shunt listener."""
@@ -987,6 +994,8 @@ class RenogyActiveBluetoothCoordinator(
                 controller_commands, controller_static_due = (
                     self._controller_commands_for_poll()
                 )
+                if controller_static_due:
+                    self._last_controller_static_attempt = time.monotonic()
                 try:
                     if (
                         controller_commands is not None
@@ -1024,7 +1033,9 @@ class RenogyActiveBluetoothCoordinator(
 
                 # Keep entities available until the configured failure threshold.
                 self._record_poll_availability(success, error)
-                if success and controller_static_due:
+                if success and controller_static_due and self._controller_static_data_refreshed(
+                    device.parsed_data
+                ):
                     self._last_controller_static_refresh = time.monotonic()
 
                 # Update coordinator data if successful
