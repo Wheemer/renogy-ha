@@ -96,6 +96,9 @@ SHUNT_RECONNECT_DELAY_SECONDS = 10
 SHUNT_FORCE_UPDATE_INTERVAL_SECONDS = 300
 SHUNT_DISCONNECT_TIMEOUT_SECONDS = 5.0
 SHUNT_STARTUP_READY_TIMEOUT_SECONDS = 30.0
+CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS = 60
+CONTROLLER_LIVE_COMMAND_NAMES = ("pv",)
+CONTROLLER_STATIC_COMMAND_NAMES = ("device_info", "device_id", "battery")
 
 
 class RenogyActiveBluetoothCoordinator(
@@ -166,6 +169,7 @@ class RenogyActiveBluetoothCoordinator(
         # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
         self._connection_in_progress = False
+        self._last_controller_static_refresh = 0.0
 
         # Warn only once when the reported model contradicts the configured type
         self._model_mismatch_warned = False
@@ -210,6 +214,35 @@ class RenogyActiveBluetoothCoordinator(
                 NonShuntConnectionMode.INTERMITTENT.value,
             ),
         )
+
+    def _controller_commands_for_poll(self) -> tuple[dict[str, Any] | None, bool]:
+        """Return the controller command subset for this poll."""
+        if self.device_type != DeviceType.CONTROLLER.value:
+            return None, False
+
+        commands_by_type = getattr(renogy_ble_module, "COMMANDS", {})
+        controller_commands = commands_by_type.get(DeviceType.CONTROLLER.value)
+        if not controller_commands:
+            return None, False
+
+        now = time.monotonic()
+        static_due = (
+            not self.data
+            or self._last_controller_static_refresh == 0.0
+            or now - self._last_controller_static_refresh
+            >= CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS
+        )
+
+        command_names = list(CONTROLLER_LIVE_COMMAND_NAMES)
+        if static_due:
+            command_names.extend(CONTROLLER_STATIC_COMMAND_NAMES)
+
+        commands = {
+            name: controller_commands[name]
+            for name in command_names
+            if name in controller_commands
+        }
+        return commands or None, static_due
 
     def _uses_sustained_shunt_listener(self, device_type: str | None = None) -> bool:
         """Return whether this coordinator should keep a sustained shunt listener."""
@@ -943,7 +976,25 @@ class RenogyActiveBluetoothCoordinator(
                     device.address,
                 )
 
+                previous_data = dict(self.data) if isinstance(self.data, dict) else {}
+                original_commands = getattr(self._ble_client, "_commands", None)
+                controller_commands, controller_static_due = (
+                    self._controller_commands_for_poll()
+                )
                 try:
+                    if (
+                        controller_commands is not None
+                        and isinstance(original_commands, dict)
+                    ):
+                        scoped_commands = dict(original_commands)
+                        scoped_commands[DeviceType.CONTROLLER.value] = controller_commands
+                        self._ble_client._commands = scoped_commands
+                        self.logger.debug(
+                            "Controller poll for %s using command subset: %s",
+                            device.address,
+                            ", ".join(controller_commands),
+                        )
+
                     read_result = await self._ble_client.read_device(device)
                 except (BleakError, asyncio.TimeoutError) as err:
                     success = False
@@ -958,13 +1009,24 @@ class RenogyActiveBluetoothCoordinator(
                     error = read_result.error
                     if error is not None and not isinstance(error, Exception):
                         error = Exception(str(error))
+                finally:
+                    if (
+                        controller_commands is not None
+                        and isinstance(original_commands, dict)
+                    ):
+                        self._ble_client._commands = original_commands
 
                 # Keep entities available until the configured failure threshold.
                 self._record_poll_availability(success, error)
+                if success and controller_static_due:
+                    self._last_controller_static_refresh = time.monotonic()
 
                 # Update coordinator data if successful
                 if success and device.parsed_data:
-                    self.data = dict(device.parsed_data)
+                    merged_data = dict(previous_data)
+                    merged_data.update(device.parsed_data)
+                    device.parsed_data = merged_data
+                    self.data = merged_data
                     self.logger.debug("Updated coordinator data: %s", self.data)
                     self._warn_if_model_mismatch()
 
