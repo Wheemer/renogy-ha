@@ -30,7 +30,10 @@
       }
     },
     "error": {
-      "unsupported_model": "This device model is not yet supported by this integration."
+      "unsupported_model": "This device model is not yet supported by this integration.",
+      "firmware_credentials_incomplete": "Enter both your Renogy account identifier and password.",
+      "invalid_firmware_auth": "Renogy rejected the account identifier or password.",
+      "cannot_connect": "Could not connect to Renogy's firmware service."
     },
     "abort": {
       "already_configured": "Device is already configured",
@@ -50,7 +53,10 @@
           "communication_hub_enabled": "Communication Hub / multiple batteries",
           "scan_interval": "Polling interval (seconds)",
           "max_failures": "Failed polls before unavailable",
-          "unavailable_retry_interval": "Reconnect interval while unavailable (minutes)"
+          "unavailable_retry_interval": "Reconnect interval while unavailable (minutes)",
+          "firmware_identifier": "Renogy account email or identifier",
+          "firmware_password": "Renogy account password",
+          "firmware_clear_auth": "Remove saved firmware account"
         }
       }
     }

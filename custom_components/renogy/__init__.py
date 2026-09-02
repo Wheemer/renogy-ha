@@ -39,7 +39,13 @@ if TYPE_CHECKING:
     from .ble import RenogyBLEDevice
 
 # List of platforms this integration supports
-PLATFORMS = [Platform.SENSOR, Platform.NUMBER, Platform.SELECT, Platform.SWITCH]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+    Platform.UPDATE,
+]
 
 
 class _CoordinatorShutdownProtocol(Protocol):
@@ -124,6 +130,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             device_data_callback=device_data_callback,
             model_hint=model_hint,
         )
+
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     # Store coordinator and devices in hass.data
@@ -132,6 +139,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "devices": [],  # Will be populated as devices are discovered
         "initialized_devices": set(),  # Track which devices have entities
+        "firmware_manager": None,
     }
 
     # Forward entry setup to sensor platform
@@ -146,10 +154,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.async_on_unload(start_func)
     except Exception as e:
         LOGGER.error("Error starting coordinator for %s: %s", device_address, e)
-
-    # Force an immediate refresh
-    LOGGER.info("Requesting initial refresh for Renogy BLE device %s", device_address)
-    hass.async_create_task(coordinator.async_request_refresh())
 
     return True
 
@@ -243,6 +247,10 @@ async def _handle_device_update(
         # This will ensure the device name is updated in the UI
         if has_real_device_name(device.name):
             await update_device_registry(hass, entry, device)
+
+        firmware_manager = entry_data.get("firmware_manager")
+        if firmware_manager is not None:
+            firmware_manager.async_device_updated()
 
 
 async def update_device_registry(

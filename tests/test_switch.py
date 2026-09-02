@@ -115,6 +115,7 @@ def _install_module_stubs() -> None:
         NUMBER = "number"
         SELECT = "select"
         SWITCH = "switch"
+        UPDATE = "update"
 
     const_module.Platform = Platform
     sys.modules["homeassistant.const"] = const_module

@@ -16,11 +16,15 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.const import CONF_ADDRESS, CONF_SCAN_INTERVAL
+from homeassistant.helpers import selector
 
 from .const import (
     CONF_COMMUNICATION_HUB_ENABLED,
     CONF_DEVICE_NAME,
     CONF_DEVICE_TYPE,
+    CONF_FIRMWARE_CLEAR_AUTH,
+    CONF_FIRMWARE_IDENTIFIER,
+    CONF_FIRMWARE_PASSWORD,
     CONF_INVERTER_PROFILE,
     CONF_MAX_FAILURES,
     CONF_NON_SHUNT_CONNECTION_MODE,
@@ -171,6 +175,20 @@ def _build_non_shunt_options_schema(
     default_hub_enabled: bool,
 ) -> vol.Schema:
     """Build non-shunt connection and Communication Hub options."""
+    firmware_fields: dict[Any, Any] = {}
+    if (
+        config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
+        == DeviceType.CONTROLLER.value
+    ):
+        firmware_fields = {
+            vol.Optional(CONF_FIRMWARE_IDENTIFIER): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+            ),
+            vol.Optional(CONF_FIRMWARE_PASSWORD): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+            ),
+            vol.Optional(CONF_FIRMWARE_CLEAR_AUTH, default=False): bool,
+        }
     return vol.Schema(
         {
             vol.Required(
@@ -182,6 +200,7 @@ def _build_non_shunt_options_schema(
                 default=default_hub_enabled,
             ): bool,
             **_runtime_options_schema_dict(config_entry),
+            **firmware_fields,
         }
     )
 
@@ -553,7 +572,27 @@ class RenogyOptionsFlowHandler(OptionsFlow):
             )
 
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            errors = await self._async_process_firmware_auth(user_input)
+            if not errors:
+                return self.async_create_entry(title="", data=user_input)
+
+            current_mode = self._config_entry.options.get(
+                CONF_NON_SHUNT_CONNECTION_MODE,
+                DEFAULT_NON_SHUNT_CONNECTION_MODE,
+            )
+            current_hub_enabled = self._config_entry.options.get(
+                CONF_COMMUNICATION_HUB_ENABLED,
+                DEFAULT_COMMUNICATION_HUB_ENABLED,
+            )
+            return self.async_show_form(
+                step_id="init",
+                data_schema=_build_non_shunt_options_schema(
+                    self._config_entry,
+                    current_mode,
+                    current_hub_enabled,
+                ),
+                errors=errors,
+            )
 
         current_mode = self._config_entry.options.get(
             CONF_NON_SHUNT_CONNECTION_MODE,
@@ -571,3 +610,41 @@ class RenogyOptionsFlowHandler(OptionsFlow):
                 current_hub_enabled,
             ),
         )
+
+    async def _async_process_firmware_auth(
+        self, user_input: dict[str, Any]
+    ) -> dict[str, str]:
+        """Validate optional Renogy firmware credentials and persist only tokens."""
+        identifier = str(user_input.pop(CONF_FIRMWARE_IDENTIFIER, "") or "").strip()
+        password = str(user_input.pop(CONF_FIRMWARE_PASSWORD, "") or "")
+        clear_auth = bool(user_input.pop(CONF_FIRMWARE_CLEAR_AUTH, False))
+
+        if not identifier and not password:
+            if clear_auth:
+                from .firmware import RenogyFirmwareAuthStore
+
+                store = RenogyFirmwareAuthStore(self.hass, self._config_entry.entry_id)
+                await store.async_clear()
+            return {}
+        if not identifier or not password:
+            return {"base": "firmware_credentials_incomplete"}
+
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        from .firmware import (
+            RenogyFirmwareAuthError,
+            RenogyFirmwareAuthStore,
+            RenogyFirmwareClient,
+            RenogyFirmwareError,
+        )
+
+        store = RenogyFirmwareAuthStore(self.hass, self._config_entry.entry_id)
+        client = RenogyFirmwareClient(async_get_clientsession(self.hass))
+        try:
+            auth = await client.async_login(identifier, password)
+        except RenogyFirmwareAuthError:
+            return {"base": "invalid_firmware_auth"}
+        except RenogyFirmwareError:
+            return {"base": "cannot_connect"}
+        await store.async_save(auth)
+        return {}

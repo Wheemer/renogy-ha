@@ -103,6 +103,15 @@ The integration is configurable through the Home Assistant UI after installation
   the model-specific `RIV4835CSH1S` profile
   - Existing entries can switch profiles through **Reconfigure** without being deleted
   - See [docs/inverter-profiles.md](docs/inverter-profiles.md) for selection guidance
+- **Controller Firmware**: `RNG-CTRL-RVR30` entries can check and install
+  official Renogy firmware through Home Assistant
+  - Open the integration's **Configure** dialog and enter the same Renogy
+    account identifier and password used by the DC Home app
+  - The password is exchanged for Renogy access tokens and is not stored
+  - Firmware is downloaded from Renogy over HTTPS, verified against the MD5
+    published in Renogy's catalog, and then exposed as a firmware update entity
+  - Keep the controller powered and within a reliable local Bluetooth path for
+    the entire update; interrupting controller firmware can leave it unusable
 
 ## Sensors
 

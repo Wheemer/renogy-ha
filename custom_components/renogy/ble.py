@@ -147,7 +147,7 @@ def _parse_controller_identity_response(raw_data: bytes) -> dict[str, Any] | Non
         for offset in range(0, len(payload), 2)
     ]
     return {
-        "sw_version": f"V{words[0] & 0xFF}.{words[1] >> 8}.{words[1] & 0xFF}",
+        "sw_version": f"V{words[0]}.{words[1] >> 8}.{words[1] & 0xFF}",
         "hw_version": f"V{words[2] & 0xFF}.{words[3] >> 8}.{words[3] & 0xFF}",
         "serial_number": str(int.from_bytes(payload[8:12], "big")),
     }
@@ -306,8 +306,7 @@ class RenogyActiveBluetoothCoordinator(
         static_due = (
             not self.data
             or last_static_attempt == 0.0
-            or now - last_static_attempt
-            >= CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS
+            or now - last_static_attempt >= CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS
         )
 
         command_names = list(CONTROLLER_LIVE_COMMAND_NAMES)
@@ -567,6 +566,65 @@ class RenogyActiveBluetoothCoordinator(
         close_client = getattr(self._ble_client, "close", None)
         if callable(close_client):
             await close_client()
+
+    async def async_install_firmware(
+        self,
+        firmware: bytes,
+        progress_callback: Callable[[float], None] | None = None,
+    ) -> None:
+        """Install controller firmware using an exclusive BLE connection."""
+        from .firmware import RenogyFirmwareError, RenogyOtaProtocol
+
+        if self.device_type != DeviceType.CONTROLLER.value:
+            raise RenogyFirmwareError("Firmware updates require a controller entry")
+
+        async with self._connection_lock:
+            self._connection_in_progress = True
+            ota_client: BleakClient | None = None
+            try:
+                close_client = getattr(self._ble_client, "close", None)
+                if callable(close_client):
+                    await close_client()
+
+                ble_device = bluetooth.async_ble_device_from_address(
+                    self.hass, self.address, connectable=True
+                )
+                if ble_device is None:
+                    raise RenogyFirmwareError(
+                        "No connectable Bluetooth path to the Renogy controller"
+                    )
+
+                device_name = (
+                    self.device.name
+                    if self.device is not None
+                    else f"Renogy {self.address}"
+                )
+                ota_client = await establish_connection(
+                    BleakClient,
+                    ble_device,
+                    device_name,
+                    max_attempts=3,
+                )
+                await RenogyOtaProtocol(ota_client).async_update(
+                    firmware, progress_callback
+                )
+            except RenogyFirmwareError:
+                raise
+            except (BleakError, TimeoutError) as err:
+                raise RenogyFirmwareError(
+                    f"Renogy firmware Bluetooth transfer failed: {err}"
+                ) from err
+            finally:
+                if ota_client is not None and ota_client.is_connected:
+                    try:
+                        await asyncio.wait_for(ota_client.disconnect(), timeout=5)
+                    except BleakError, TimeoutError:
+                        self.logger.debug(
+                            "Could not cleanly disconnect firmware client for %s",
+                            self.address,
+                        )
+                self._ble_client = self._build_ble_client_for_type(self.device_type)
+                self._connection_in_progress = False
 
     def _update_device_from_service_info(
         self, service_info: BluetoothServiceInfoBleak
@@ -1135,9 +1193,8 @@ class RenogyActiveBluetoothCoordinator(
                 if controller_static_due:
                     self._last_controller_static_attempt = time.monotonic()
                 try:
-                    if (
-                        controller_commands is not None
-                        and isinstance(original_commands, dict)
+                    if controller_commands is not None and isinstance(
+                        original_commands, dict
                     ):
                         scoped_commands = dict(original_commands)
                         scoped_commands[DeviceType.CONTROLLER.value] = (
@@ -1165,9 +1222,8 @@ class RenogyActiveBluetoothCoordinator(
                     if error is not None and not isinstance(error, Exception):
                         error = Exception(str(error))
                 finally:
-                    if (
-                        controller_commands is not None
-                        and isinstance(original_commands, dict)
+                    if controller_commands is not None and isinstance(
+                        original_commands, dict
                     ):
                         self._ble_client._commands = original_commands
 

@@ -91,6 +91,7 @@ def _install_module_stubs() -> None:
         NUMBER = "number"
         SELECT = "select"
         SWITCH = "switch"
+        UPDATE = "update"
 
     class UnitOfElectricCurrent:
         """Stub current units."""

@@ -39,6 +39,7 @@ def _install_module_stubs(*, install_ble: bool = True) -> type | None:
         NUMBER = "number"
         SELECT = "select"
         SWITCH = "switch"
+        UPDATE = "update"
 
     const_module.Platform = Platform
     sys.modules["homeassistant.const"] = const_module

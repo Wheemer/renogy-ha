@@ -108,6 +108,7 @@ def _install_module_stubs() -> None:
         NUMBER = "number"
         SELECT = "select"
         SWITCH = "switch"
+        UPDATE = "update"
 
     const_module.Platform = Platform
     sys.modules["homeassistant.const"] = const_module
@@ -376,9 +377,7 @@ def test_read_device_data_handles_ble_errors():
     failing_client.read_device = AsyncMock(
         side_effect=ble_module.BleakError("read failed")
     )
-    coordinator._build_ble_client_for_type = MagicMock(
-        return_value=failing_client
-    )
+    coordinator._build_ble_client_for_type = MagicMock(return_value=failing_client)
 
     success = asyncio.run(coordinator._read_device_data(service_info))
 
@@ -411,9 +410,7 @@ def test_read_failures_respect_configured_availability_grace():
     failing_client.read_device = AsyncMock(
         side_effect=ble_module.BleakError("read failed")
     )
-    coordinator._build_ble_client_for_type = MagicMock(
-        return_value=failing_client
-    )
+    coordinator._build_ble_client_for_type = MagicMock(return_value=failing_client)
 
     assert asyncio.run(coordinator._read_device_data(service_info)) is False
     assert coordinator.last_update_success is False

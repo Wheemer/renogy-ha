@@ -41,6 +41,9 @@ CONF_DEVICE_NAME = "device_name"
 CONF_SHUNT_CONNECTION_MODE = "shunt_connection_mode"
 CONF_NON_SHUNT_CONNECTION_MODE = "non_shunt_connection_mode"
 CONF_COMMUNICATION_HUB_ENABLED = "communication_hub_enabled"
+CONF_FIRMWARE_IDENTIFIER = "firmware_identifier"
+CONF_FIRMWARE_PASSWORD = "firmware_password"
+CONF_FIRMWARE_CLEAR_AUTH = "firmware_clear_auth"
 DEFAULT_COMMUNICATION_HUB_ENABLED = False
 
 # Device info

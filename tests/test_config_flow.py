@@ -7,6 +7,7 @@ import importlib
 import json
 import sys
 import types
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
@@ -152,9 +153,20 @@ def _load_config_flow_module() -> Any:
     class OptionsFlow:
         """Stub OptionsFlow for config-flow imports."""
 
-        def async_show_form(self, *, step_id: str, data_schema: Any) -> dict[str, Any]:
+        def async_show_form(
+            self,
+            *,
+            step_id: str,
+            data_schema: Any,
+            errors: dict[str, str] | None = None,
+        ) -> dict[str, Any]:
             """Return a Home Assistant-like options-form result."""
-            return {"type": "form", "step_id": step_id, "data_schema": data_schema}
+            return {
+                "type": "form",
+                "step_id": step_id,
+                "data_schema": data_schema,
+                "errors": errors or {},
+            }
 
         def async_create_entry(self, *, title: str, data: Any) -> dict[str, Any]:
             """Return a Home Assistant-like options-entry result."""
@@ -170,6 +182,37 @@ def _load_config_flow_module() -> Any:
     const_module.CONF_ADDRESS = "address"
     const_module.CONF_SCAN_INTERVAL = "scan_interval"
     sys.modules["homeassistant.const"] = const_module
+
+    helpers_module = cast(Any, types.ModuleType("homeassistant.helpers"))
+    selector_module = cast(Any, types.ModuleType("homeassistant.helpers.selector"))
+
+    class TextSelectorType(StrEnum):
+        """Text selector types used by this integration."""
+
+        TEXT = "text"
+        PASSWORD = "password"
+
+    class TextSelectorConfig:
+        """Minimal text selector configuration."""
+
+        def __init__(self, *, type: TextSelectorType) -> None:
+            self.type = type
+
+    class TextSelector:
+        """Pass-through selector validator."""
+
+        def __init__(self, config: TextSelectorConfig) -> None:
+            self.config = config
+
+        def __call__(self, value: Any) -> Any:
+            return value
+
+    selector_module.TextSelectorType = TextSelectorType
+    selector_module.TextSelectorConfig = TextSelectorConfig
+    selector_module.TextSelector = TextSelector
+    helpers_module.selector = selector_module
+    sys.modules["homeassistant.helpers"] = helpers_module
+    sys.modules["homeassistant.helpers.selector"] = selector_module
 
     sys.modules.pop("custom_components.renogy.const", None)
     sys.modules.pop("custom_components.renogy.device_name", None)
@@ -702,6 +745,9 @@ def test_options_flow_shows_all_three_knobs() -> None:
         const_module.CONF_SCAN_INTERVAL,
         const_module.CONF_MAX_FAILURES,
         const_module.CONF_UNAVAILABLE_RETRY_INTERVAL,
+        const_module.CONF_FIRMWARE_IDENTIFIER,
+        const_module.CONF_FIRMWARE_PASSWORD,
+        const_module.CONF_FIRMWARE_CLEAR_AUTH,
     }
 
 
@@ -740,6 +786,28 @@ def test_options_flow_accepts_and_stores_valid_input() -> None:
 
     assert result["type"] == "create_entry"
     assert result["data"] == user_input
+
+
+def test_options_flow_rejects_incomplete_firmware_credentials() -> None:
+    """A partial account login must not replace the existing options."""
+    config_flow_module = _load_config_flow_module()
+    const_module = importlib.import_module("custom_components.renogy.const")
+
+    entry = _options_entry(const_module, const_module.DeviceType.CONTROLLER.value)
+    handler = config_flow_module.RenogyOptionsFlowHandler(entry)
+    result = asyncio.run(
+        handler.async_step_init(
+            {
+                const_module.CONF_SCAN_INTERVAL: 30,
+                const_module.CONF_MAX_FAILURES: 5,
+                const_module.CONF_UNAVAILABLE_RETRY_INTERVAL: 2,
+                const_module.CONF_FIRMWARE_IDENTIFIER: "owner@example.com",
+            }
+        )
+    )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "firmware_credentials_incomplete"}
 
 
 @pytest.mark.parametrize("filename", ["strings.json", "translations/en.json"])
