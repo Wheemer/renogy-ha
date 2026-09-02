@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, cast
 
 from homeassistant.components.bluetooth.passive_update_coordinator import (
@@ -48,6 +51,7 @@ from .hub_sensor import setup_hub_battery_sensors
 KEY_BATTERY_VOLTAGE = "battery_voltage"
 KEY_BATTERY_CURRENT = "battery_current"
 KEY_BATTERY_PERCENTAGE = "battery_percentage"
+KEY_ESTIMATED_BATTERY_PERCENTAGE = "estimated_battery_percentage"
 KEY_BATTERY_TEMPERATURE = "battery_temperature"
 KEY_BATTERY_TYPE = "battery_type"
 KEY_CHARGING_AMP_HOURS_TODAY = "charging_amp_hours_today"
@@ -118,6 +122,34 @@ ENERGY_COUNTER_KEYS = {
     KEY_SHUNT_ENERGY_DISCHARGED_TOTAL,
 }
 
+CURVE_FILE = Path(__file__).with_name("battery_curves.json")
+DEFAULT_LIFEPO4_12V_SOC_CURVE: tuple[tuple[float, float], ...] = (
+    (14.60, 100.0),
+    (14.45, 99.0),
+    (13.87, 95.0),
+    (13.30, 90.0),
+    (13.25, 80.0),
+    (13.20, 70.0),
+    (13.17, 60.0),
+    (13.13, 50.0),
+    (13.10, 40.0),
+    (13.00, 30.0),
+    (12.90, 20.0),
+    (12.80, 17.0),
+    (12.50, 14.0),
+    (12.00, 9.0),
+    (10.00, 0.0),
+)
+DEFAULT_SOC_CURVES: dict[str, dict[str, tuple[tuple[float, float], ...]]] = {
+    "12V": {"lifepo4": DEFAULT_LIFEPO4_12V_SOC_CURVE}
+}
+SOC_CURVE_CACHE = DEFAULT_SOC_CURVES
+MAX_DISCHARGE_PERCENT_PER_MINUTE = 0.8
+MAX_CHARGE_PERCENT_PER_MINUTE = 1.0
+MAX_STEADY_PERCENT_PER_MINUTE = 0.6
+BATTERY_CURRENT_CHARGING_THRESHOLD = 0.05
+VOLTAGE_TREND_THRESHOLD = 0.03
+
 # Inverter-specific sensor keys
 KEY_AC_OUTPUT_VOLTAGE = "ac_output_voltage"
 KEY_AC_OUTPUT_CURRENT = "ac_output_current"
@@ -180,6 +212,73 @@ def _coerce_float(value: Any, *, default: float | None) -> float | None:
         return float(value)
     except TypeError, ValueError:
         return default
+
+
+def _load_soc_curve(
+    battery_voltage: str = "12V",
+    battery_type: str = "lifepo4",
+) -> tuple[tuple[float, float], ...]:
+    """Return the cached voltage-to-SOC curve."""
+    return SOC_CURVE_CACHE.get(battery_voltage, {}).get(
+        battery_type,
+        DEFAULT_SOC_CURVES[battery_voltage][battery_type],
+    )
+
+
+def _read_soc_curves_from_disk() -> dict[
+    str, dict[str, tuple[tuple[float, float], ...]]
+]:
+    """Load the editable voltage-to-SOC curve, falling back to the default."""
+    try:
+        with CURVE_FILE.open(encoding="utf-8") as curve_file:
+            curves = json.load(curve_file).get("curves", {})
+        parsed_curves: dict[str, dict[str, tuple[tuple[float, float], ...]]] = {}
+        for voltage_name, voltage_curves in curves.items():
+            if not isinstance(voltage_curves, dict):
+                continue
+            parsed_curves[voltage_name] = {}
+            for type_name, curve in voltage_curves.items():
+                if not curve:
+                    continue
+                parsed_curves[voltage_name][type_name] = tuple(
+                    (float(point[0]), float(point[1]))
+                    for point in curve
+                    if isinstance(point, list | tuple) and len(point) >= 2
+                )
+        if parsed_curves:
+            return parsed_curves
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as err:
+        LOGGER.warning(
+            "Unable to load Renogy battery curve from %s: %s", CURVE_FILE, err
+        )
+
+    return DEFAULT_SOC_CURVES
+
+
+def _interpolate_voltage_curve(
+    voltage: float,
+    curve: tuple[tuple[float, float], ...],
+) -> float:
+    """Interpolate a percent value from a descending voltage curve."""
+    ordered_curve = sorted(curve, reverse=True)
+    if not ordered_curve:
+        return 0.0
+    if voltage >= ordered_curve[0][0]:
+        return ordered_curve[0][1]
+    if voltage <= ordered_curve[-1][0]:
+        return ordered_curve[-1][1]
+
+    for high_point, low_point in zip(ordered_curve, ordered_curve[1:]):
+        high_voltage, high_percent = high_point
+        low_voltage, low_percent = low_point
+        if high_voltage >= voltage >= low_voltage:
+            voltage_span = high_voltage - low_voltage
+            if voltage_span == 0:
+                return low_percent
+            ratio = (voltage - low_voltage) / voltage_span
+            return low_percent + ratio * (high_percent - low_percent)
+
+    return ordered_curve[-1][1]
 
 
 # SHUNT300 sensor entity descriptions (expand as needed)
@@ -291,6 +390,14 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_ESTIMATED_BATTERY_PERCENTAGE,
+        name="Estimated Battery Percent",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
     ),
     RenogyBLESensorDescription(
         key=KEY_BATTERY_TEMPERATURE,
@@ -1015,7 +1122,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Renogy BLE sensors."""
+    global SOC_CURVE_CACHE  # noqa: PLW0603
+
     LOGGER.debug("Setting up Renogy BLE sensors for entry: %s", config_entry.entry_id)
+    SOC_CURVE_CACHE = await hass.async_add_executor_job(_read_soc_curves_from_disk)
 
     renogy_data = hass.data[DOMAIN][config_entry.entry_id]
     coordinator = renogy_data["coordinator"]
@@ -1084,7 +1194,12 @@ def create_entities_helper(
     # Group sensors by category
     for category_name, sensor_list in sensor_groups.items():
         for description in sensor_list:
-            sensor = RenogyBLESensor(
+            sensor_class = (
+                RenogyEstimatedBatteryPercentageSensor
+                if description.key == KEY_ESTIMATED_BATTERY_PERCENTAGE
+                else RenogyBLESensor
+            )
+            sensor = sensor_class(
                 coordinator, device, description, category_name, device_type
             )
             entities.append(sensor)
@@ -1234,6 +1349,15 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
         """Return if the sensor is available."""
         return is_entity_available(self.coordinator, self._device)
 
+    def _current_data(self) -> dict[str, Any] | None:
+        """Return the freshest parsed device or coordinator payload."""
+        device = self.device
+        if device and device.parsed_data:
+            return device.parsed_data
+        if self.coordinator.data:
+            return self.coordinator.data
+        return None
+
     @property
     def native_value(self) -> Any:
         """Return the sensor's value."""
@@ -1241,15 +1365,7 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
         if self._attr_native_value is not None:
             return self._attr_native_value
 
-        device = self.device
-        data = None
-
-        # Get data from device if available, otherwise from coordinator
-        if device and device.parsed_data:
-            data = device.parsed_data
-        elif self.coordinator.data:
-            data = self.coordinator.data
-
+        data = self._current_data()
         if not data:
             return None
 
@@ -1457,3 +1573,128 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
         self._energy_last_raw = raw_value
         self._energy_last_adjusted = adjusted
         return round(adjusted, 3)
+
+
+class RenogyEstimatedBatteryPercentageSensor(RenogyBLESensor):
+    """Estimate battery SOC from controller voltage with reload-stable smoothing."""
+
+    def __init__(
+        self,
+        coordinator: RenogyActiveBluetoothCoordinator,
+        device: Optional[RenogyBLEDevice],
+        description: RenogyBLESensorDescription,
+        category: str | None = None,
+        device_type: str = DEFAULT_DEVICE_TYPE,
+    ) -> None:
+        """Initialize the estimated SOC sensor."""
+        super().__init__(coordinator, device, description, category, device_type)
+        self._soc_previous_percentage: float | None = None
+        self._soc_last_updated_ts: float | None = None
+        self._soc_anchor_percentage: float | None = None
+        self._soc_rate_limited = False
+        self._soc_max_change: float | None = None
+        self._soc_direction = "unknown"
+        self._soc_source_voltage: float | None = None
+        self._soc_source_current: float | None = None
+        self._soc_previous_voltage: float | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the displayed SOC so an integration reload cannot make it jump."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            return
+
+        restored_value = _coerce_float(last_state.state, default=None)
+        if restored_value is None:
+            return
+
+        restored_value = max(0.0, min(100.0, restored_value))
+        self._soc_previous_percentage = restored_value
+        self._attr_native_value = round(restored_value, 1)
+        self._soc_last_updated_ts = time.time()
+
+    @property
+    def native_value(self) -> Any:
+        """Return estimated SOC from battery voltage."""
+        data = self._current_data()
+        if not data:
+            return None
+
+        voltage = _coerce_float(data.get(KEY_BATTERY_VOLTAGE), default=None)
+        if voltage is None:
+            return None
+
+        current = _coerce_float(data.get(KEY_BATTERY_CURRENT), default=None)
+        curve = _load_soc_curve()
+        anchor = max(0.0, min(100.0, _interpolate_voltage_curve(voltage, curve)))
+        now = time.time()
+
+        direction = self._direction_from_data(voltage, current)
+        max_per_minute = {
+            "charging": MAX_CHARGE_PERCENT_PER_MINUTE,
+            "discharging": MAX_DISCHARGE_PERCENT_PER_MINUTE,
+            "steady": MAX_STEADY_PERCENT_PER_MINUTE,
+        }.get(direction, MAX_STEADY_PERCENT_PER_MINUTE)
+
+        previous = self._soc_previous_percentage
+        elapsed_minutes = 0.0
+        if self._soc_last_updated_ts is not None:
+            elapsed_minutes = max((now - self._soc_last_updated_ts) / 60.0, 0.0)
+
+        self._soc_rate_limited = False
+        self._soc_max_change = None
+        percentage = anchor
+        if previous is not None and elapsed_minutes > 0:
+            max_change = max_per_minute * elapsed_minutes
+            lower_bound = max(previous - max_change, 0.0)
+            upper_bound = min(previous + max_change, 100.0)
+            percentage = max(lower_bound, min(upper_bound, anchor))
+            self._soc_rate_limited = abs(percentage - anchor) > 0.05
+            self._soc_max_change = round(max_change, 3)
+
+        self._soc_previous_percentage = percentage
+        self._soc_last_updated_ts = now
+        self._soc_anchor_percentage = round(anchor, 1)
+        self._soc_direction = direction
+        self._soc_source_voltage = voltage
+        self._soc_source_current = current
+        self._soc_previous_voltage = voltage
+        self._attr_native_value = round(percentage, 1)
+        return self._attr_native_value
+
+    def _direction_from_data(
+        self,
+        voltage: float,
+        current: float | None,
+    ) -> str:
+        """Infer charge direction from controller current or voltage trend."""
+        if current is not None and current > BATTERY_CURRENT_CHARGING_THRESHOLD:
+            return "charging"
+        if self._soc_previous_voltage is None:
+            return "unknown"
+
+        voltage_delta = voltage - self._soc_previous_voltage
+        if voltage_delta >= VOLTAGE_TREND_THRESHOLD:
+            return "charging"
+        if voltage_delta <= -VOLTAGE_TREND_THRESHOLD:
+            return "discharging"
+        return "steady"
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return diagnostic details for the voltage-derived SOC estimate."""
+        attrs = super().extra_state_attributes
+        attrs["source"] = "renogy_battery_voltage_lifepo4_curve"
+        if self._soc_source_voltage is not None:
+            attrs["source_voltage"] = self._soc_source_voltage
+        if self._soc_source_current is not None:
+            attrs["source_current"] = self._soc_source_current
+        if self._soc_anchor_percentage is not None:
+            attrs["soc_anchor_percentage"] = self._soc_anchor_percentage
+        attrs["soc_rate_limited"] = self._soc_rate_limited
+        if self._soc_max_change is not None:
+            attrs["soc_max_change"] = self._soc_max_change
+        attrs["soc_direction"] = self._soc_direction
+        attrs["curve_file"] = str(CURVE_FILE)
+        return attrs

@@ -311,6 +311,9 @@ def test_sensor_setup_does_not_wait_for_named_shunt() -> None:
 
     hass = MagicMock()
     hass.data = {sensor_module.DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+    hass.async_add_executor_job = AsyncMock(
+        return_value=sensor_module.DEFAULT_SOC_CURVES
+    )
 
     config_entry = MagicMock()
     config_entry.entry_id = "entry-1"
@@ -348,6 +351,9 @@ def test_sensor_setup_does_not_wait_for_unknown_device_name() -> None:
 
     hass = MagicMock()
     hass.data = {sensor_module.DOMAIN: {"entry-1": {"coordinator": coordinator}}}
+    hass.async_add_executor_job = AsyncMock(
+        return_value=sensor_module.DEFAULT_SOC_CURVES
+    )
 
     config_entry = MagicMock()
     config_entry.entry_id = "entry-1"
@@ -396,6 +402,75 @@ def test_shunt_energy_sensors_use_total_increasing_state_class() -> None:
         assert (
             description.state_class == sensor_module.SensorStateClass.TOTAL_INCREASING
         )
+
+
+def test_lifepo4_curve_preserves_live_soc_anchors() -> None:
+    """Keep the private controller SOC curve across upstream rebases."""
+    sensor_module = _load_sensor_module()
+    curve = sensor_module.DEFAULT_LIFEPO4_12V_SOC_CURVE
+
+    assert sensor_module._interpolate_voltage_curve(14.60, curve) == 100.0
+    assert sensor_module._interpolate_voltage_curve(13.30, curve) == 90.0
+    assert sensor_module._interpolate_voltage_curve(12.90, curve) == 20.0
+    assert sensor_module._interpolate_voltage_curve(10.00, curve) == 0.0
+
+
+def test_controller_uses_estimated_soc_entity() -> None:
+    """The controller keeps its reload-stable voltage-derived SOC entity."""
+    sensor_module = _load_sensor_module()
+    coordinator = MagicMock(
+        address="AA:BB:CC:DD:EE:FF",
+        device=None,
+        data={sensor_module.KEY_BATTERY_VOLTAGE: 13.30},
+        last_update_success=True,
+    )
+
+    entities = sensor_module.create_entities_helper(
+        coordinator,
+        None,
+        sensor_module.DeviceType.CONTROLLER.value,
+    )
+    estimated = next(
+        entity
+        for entity in entities
+        if entity.entity_description.key
+        == sensor_module.KEY_ESTIMATED_BATTERY_PERCENTAGE
+    )
+
+    assert isinstance(estimated, sensor_module.RenogyEstimatedBatteryPercentageSensor)
+    assert estimated.native_value == 90.0
+
+
+def test_estimated_soc_restore_prevents_reload_jump() -> None:
+    """A reload resumes from the recorded SOC instead of jumping to the curve."""
+    sensor_module = _load_sensor_module()
+    coordinator = MagicMock(
+        address="AA:BB:CC:DD:EE:FF",
+        device=None,
+        data={sensor_module.KEY_BATTERY_VOLTAGE: 12.90},
+        last_update_success=True,
+    )
+    description = next(
+        item
+        for item in sensor_module.BATTERY_SENSORS
+        if item.key == sensor_module.KEY_ESTIMATED_BATTERY_PERCENTAGE
+    )
+    estimated = sensor_module.RenogyEstimatedBatteryPercentageSensor(
+        coordinator,
+        None,
+        description,
+        "Battery",
+        sensor_module.DeviceType.CONTROLLER.value,
+    )
+    estimated._mock_last_state = MagicMock(state="80")
+
+    with patch.object(sensor_module.time, "time", side_effect=[1000.0, 1060.0]):
+        asyncio.run(estimated.async_added_to_hass())
+        value = estimated.native_value
+
+    assert value == 79.4
+    assert estimated.extra_state_attributes["soc_anchor_percentage"] == 20.0
+    assert estimated.extra_state_attributes["soc_rate_limited"] is True
 
 
 def test_measurement_sensors_declare_display_precision() -> None:
@@ -785,6 +860,9 @@ def test_sensor_setup_registers_hub_battery_sensor_layer() -> None:
             }
         }
     }
+    hass.async_add_executor_job = AsyncMock(
+        return_value=sensor_module.DEFAULT_SOC_CURVES
+    )
 
     config_entry = MagicMock()
     config_entry.entry_id = "entry-1"
