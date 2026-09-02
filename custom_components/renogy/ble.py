@@ -243,6 +243,7 @@ class RenogyActiveBluetoothCoordinator(
 
         # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
+        self._firmware_update_in_progress = False
         self._connection_in_progress = False
         self._last_controller_static_attempt = 0.0
         self._last_controller_static_refresh = 0.0
@@ -567,6 +568,11 @@ class RenogyActiveBluetoothCoordinator(
         if callable(close_client):
             await close_client()
 
+    @property
+    def firmware_update_in_progress(self) -> bool:
+        """Return whether an exclusive controller firmware write is active."""
+        return self._firmware_update_in_progress
+
     async def async_install_firmware(
         self,
         firmware: bytes,
@@ -578,53 +584,61 @@ class RenogyActiveBluetoothCoordinator(
         if self.device_type != DeviceType.CONTROLLER.value:
             raise RenogyFirmwareError("Firmware updates require a controller entry")
 
-        async with self._connection_lock:
-            self._connection_in_progress = True
-            ota_client: BleakClient | None = None
-            try:
-                close_client = getattr(self._ble_client, "close", None)
-                if callable(close_client):
-                    await close_client()
+        if self._firmware_update_in_progress:
+            raise RenogyFirmwareError("A Renogy firmware update is already in progress")
 
-                ble_device = bluetooth.async_ble_device_from_address(
-                    self.hass, self.address, connectable=True
-                )
-                if ble_device is None:
-                    raise RenogyFirmwareError(
-                        "No connectable Bluetooth path to the Renogy controller"
+        self._firmware_update_in_progress = True
+
+        try:
+            async with self._connection_lock:
+                self._connection_in_progress = True
+                ota_client: BleakClient | None = None
+                try:
+                    close_client = getattr(self._ble_client, "close", None)
+                    if callable(close_client):
+                        await close_client()
+
+                    ble_device = bluetooth.async_ble_device_from_address(
+                        self.hass, self.address, connectable=True
                     )
-
-                device_name = (
-                    self.device.name
-                    if self.device is not None
-                    else f"Renogy {self.address}"
-                )
-                ota_client = await establish_connection(
-                    BleakClient,
-                    ble_device,
-                    device_name,
-                    max_attempts=3,
-                )
-                await RenogyOtaProtocol(ota_client).async_update(
-                    firmware, progress_callback
-                )
-            except RenogyFirmwareError:
-                raise
-            except (BleakError, TimeoutError) as err:
-                raise RenogyFirmwareError(
-                    f"Renogy firmware Bluetooth transfer failed: {err}"
-                ) from err
-            finally:
-                if ota_client is not None and ota_client.is_connected:
-                    try:
-                        await asyncio.wait_for(ota_client.disconnect(), timeout=5)
-                    except BleakError, TimeoutError:
-                        self.logger.debug(
-                            "Could not cleanly disconnect firmware client for %s",
-                            self.address,
+                    if ble_device is None:
+                        raise RenogyFirmwareError(
+                            "No connectable Bluetooth path to the Renogy controller"
                         )
-                self._ble_client = self._build_ble_client_for_type(self.device_type)
-                self._connection_in_progress = False
+
+                    device_name = (
+                        self.device.name
+                        if self.device is not None
+                        else f"Renogy {self.address}"
+                    )
+                    ota_client = await establish_connection(
+                        BleakClient,
+                        ble_device,
+                        device_name,
+                        max_attempts=3,
+                    )
+                    await RenogyOtaProtocol(ota_client).async_update(
+                        firmware, progress_callback
+                    )
+                except RenogyFirmwareError:
+                    raise
+                except (BleakError, TimeoutError) as err:
+                    raise RenogyFirmwareError(
+                        f"Renogy firmware Bluetooth transfer failed: {err}"
+                    ) from err
+                finally:
+                    if ota_client is not None and ota_client.is_connected:
+                        try:
+                            await asyncio.wait_for(ota_client.disconnect(), timeout=5)
+                        except BleakError, TimeoutError:
+                            self.logger.debug(
+                                "Could not cleanly disconnect firmware client for %s",
+                                self.address,
+                            )
+                    self._ble_client = self._build_ble_client_for_type(self.device_type)
+                    self._connection_in_progress = False
+        finally:
+            self._firmware_update_in_progress = False
 
     def _update_device_from_service_info(
         self, service_info: BluetoothServiceInfoBleak

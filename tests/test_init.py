@@ -370,6 +370,31 @@ def test_async_unload_entry_schedules_shutdown() -> None:
     shutdown_coro.close()
 
 
+def test_async_unload_entry_refuses_during_firmware_update() -> None:
+    """Ensure reload cannot tear down an active controller firmware write."""
+    init_module, _ = _load_init_module()
+    coordinator = MagicMock()
+    coordinator.firmware_update_in_progress = True
+    hass = MagicMock()
+    hass.data = {
+        init_module.DOMAIN: {
+            "entry-1": {
+                "coordinator": coordinator,
+                "devices": [],
+                "initialized_devices": set(),
+            }
+        }
+    }
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+    entry = MagicMock(entry_id="entry-1")
+
+    result = asyncio.run(init_module.async_unload_entry(hass, entry))
+
+    assert result is False
+    hass.config_entries.async_unload_platforms.assert_not_awaited()
+    assert "entry-1" in hass.data[init_module.DOMAIN]
+
+
 def test_async_shutdown_coordinator_times_out() -> None:
     """Ensure coordinator shutdown timeouts are logged and do not raise."""
     init_module, _ = _load_init_module()

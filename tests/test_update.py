@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 
 def _load_update_module() -> Any:
     """Load update.py with focused Home Assistant and integration stubs."""
@@ -223,3 +225,14 @@ def test_firmware_update_entity_is_diagnostic() -> None:
         module.RenogyControllerFirmwareUpdate._attr_entity_category
         == module.EntityCategory.DIAGNOSTIC
     )
+
+
+def test_firmware_update_entity_rejects_duplicate_install() -> None:
+    """A second service call must not queue another controller flash."""
+    module = _load_update_module()
+    manager = _manager(module)
+    manager.coordinator.firmware_update_in_progress = True
+    entity = module.RenogyControllerFirmwareUpdate(manager)
+
+    with pytest.raises(module.HomeAssistantError, match="already in progress"):
+        asyncio.run(entity.async_install(None, False))

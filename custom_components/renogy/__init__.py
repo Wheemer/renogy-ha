@@ -307,6 +307,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     LOGGER.debug("Unloading Renogy BLE integration for %s", entry.entry_id)
 
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if entry_data is not None:
+        coordinator = entry_data["coordinator"]
+        if getattr(coordinator, "firmware_update_in_progress", False) is True:
+            LOGGER.warning(
+                "Refusing to unload Renogy entry %s during a firmware update",
+                entry.entry_id,
+            )
+            return False
+
     # Unload platforms
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 

@@ -739,6 +739,20 @@ def test_async_shutdown_closes_persistent_library_client():
     coordinator._ble_client.close.assert_awaited_once()
 
 
+def test_firmware_update_state_defaults_to_inactive():
+    """Ensure ordinary entry unloads are not blocked before an OTA starts."""
+    ble_module = _load_ble_module()
+    coordinator = ble_module.RenogyActiveBluetoothCoordinator(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        address="AA:BB:CC:DD:EE:FF",
+        scan_interval=30,
+        device_type="controller",
+    )
+
+    assert coordinator.firmware_update_in_progress is False
+
+
 def test_persistent_refresh_uses_cached_device_when_service_info_expires():
     """Ensure persistent sessions still poll after HA drops advertisement cache."""
     ble_module = _load_ble_module()

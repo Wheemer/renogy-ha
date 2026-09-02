@@ -287,6 +287,9 @@ class RenogyControllerFirmwareUpdate(UpdateEntity):
     ) -> None:
         """Install the exact firmware image offered by Renogy."""
         del backup, kwargs
+        if self._attr_in_progress or self.coordinator.firmware_update_in_progress:
+            raise HomeAssistantError("A Renogy firmware update is already in progress")
+
         release = self.manager.release
         if release is None:
             raise HomeAssistantError("No Renogy firmware release is available")
