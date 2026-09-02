@@ -3,10 +3,26 @@
     "flow_title": "{name} ({address})",
     "step": {
       "user": {
-        "description": "Set up Renogy BLE device: {device_name}. \n\nDefault polling interval: {default_interval} seconds.",
+        "description": "Choose how Home Assistant should connect to the Renogy device.",
         "data": {
+          "transport": "Connection type"
+        }
+      },
+      "bluetooth_manual": {
+        "description": "Set up Renogy Bluetooth device: {device_name}. \n\nDefault polling interval: {default_interval} seconds.",
+        "data": {
+          "address": "Bluetooth device",
           "scan_interval": "Polling interval (seconds)",
           "device_type": "Device Type"
+        }
+      },
+      "serial": {
+        "description": "Set up a Renogy charge controller over wired Modbus RTU / RS485.",
+        "data": {
+          "serial_port": "Serial port",
+          "slave_address": "Modbus address",
+          "baudrate": "Baud rate",
+          "scan_interval": "Polling interval (seconds)"
         }
       }
     },
@@ -15,7 +31,7 @@
     },
     "abort": {
       "already_configured": "Device is already configured",
-      "no_devices_found": "No Renogy BLE devices discovered",
+      "no_devices_found": "No Renogy Bluetooth devices discovered",
       "not_supported_device": "This device is not a supported Renogy BLE device",
       "unsupported_device_type": "The {device_type} device type is not currently supported. Only controller, battery, DCC (DC-DC charger), inverter, and shunt300 devices are fully supported at this time."
     }

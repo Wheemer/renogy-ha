@@ -102,7 +102,7 @@ class RenogyLoadSwitch(PassiveBluetoothCoordinatorEntity, SwitchEntity):
                 name=device.name,
                 manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {device.address}",
+                hw_version=f"Address: {device.address}",
                 sw_version=device_type.capitalize(),
             )
         else:
@@ -115,7 +115,7 @@ class RenogyLoadSwitch(PassiveBluetoothCoordinatorEntity, SwitchEntity):
                 name=f"Renogy {device_type.capitalize()}",
                 manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {coordinator.address}",
+                hw_version=f"Address: {coordinator.address}",
                 sw_version=device_type.capitalize(),
             )
 

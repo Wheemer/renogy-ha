@@ -18,13 +18,20 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_ADDRESS, CONF_SCAN_INTERVAL
 
 from .const import (
+    CONF_BAUDRATE,
     CONF_DEVICE_TYPE,
     CONF_NON_SHUNT_CONNECTION_MODE,
+    CONF_SERIAL_PORT,
     CONF_SHUNT_CONNECTION_MODE,
+    CONF_SLAVE_ADDRESS,
+    CONF_TRANSPORT,
     DEFAULT_DEVICE_TYPE,
+    DEFAULT_SERIAL_BAUDRATE,
     DEFAULT_NON_SHUNT_CONNECTION_MODE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SHUNT_CONNECTION_MODE,
+    DEFAULT_SLAVE_ADDRESS,
+    DEFAULT_TRANSPORT,
     DEVICE_TYPES,
     DOMAIN,
     LOGGER,
@@ -34,6 +41,8 @@ from .const import (
     SHUNT_CONNECTION_MODES,
     SUPPORTED_DEVICE_TYPES,
     DeviceType,
+    TransportType,
+    TRANSPORT_TYPES,
 )
 from .device_name import (
     detect_device_type_from_ble_name,
@@ -166,6 +175,18 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            if (
+                not self._discovered_device
+                and user_input.get(CONF_TRANSPORT) == TransportType.SERIAL.value
+            ):
+                return await self.async_step_serial()
+
+            if not self._discovered_device and CONF_TRANSPORT in user_input:
+                await self._async_discover_devices()
+                if not self._discovered_devices:
+                    return self.async_abort(reason="no_devices_found")
+                return await self.async_step_bluetooth_manual()
+
             # Check if the selected device type is supported
             if (
                 CONF_DEVICE_TYPE in user_input
@@ -229,7 +250,46 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors=errors,
             )
 
-        # Otherwise, scan for available devices to let the user pick one
+        if not self._discovered_device:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_TRANSPORT,
+                            default=DEFAULT_TRANSPORT,
+                        ): vol.In(TRANSPORT_TYPES),
+                    }
+                ),
+                errors=errors,
+            )
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_DEVICE_TYPE, default=self._default_device_type
+                    ): vol.In(DEVICE_TYPES),
+                    **SCAN_INTERVAL_SCHEMA,
+                }
+            ),
+            description_placeholders={
+                "device_name": _display_name_for_discovery(self._discovered_device),
+                "default_interval": str(DEFAULT_SCAN_INTERVAL),
+            },
+            errors=errors,
+        )
+
+    async def async_step_bluetooth_manual(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle manual BLE setup after transport selection."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            return await self.async_step_user(user_input)
+
         await self._async_discover_devices()
 
         if not self._discovered_devices:
@@ -250,12 +310,51 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         return self.async_show_form(
-            step_id="user",
+            step_id="bluetooth_manual",
             data_schema=address_schema,
             description_placeholders={
                 "device_name": "Select below",
                 "default_interval": str(DEFAULT_SCAN_INTERVAL),
             },
+            errors=errors,
+        )
+
+    async def async_step_serial(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle wired serial Modbus setup."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            serial_port = user_input[CONF_SERIAL_PORT]
+            slave_address = user_input[CONF_SLAVE_ADDRESS]
+            unique_id = f"serial://{serial_port}/{slave_address}"
+            await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured()
+            user_input[CONF_TRANSPORT] = TransportType.SERIAL.value
+            user_input[CONF_DEVICE_TYPE] = DeviceType.CONTROLLER.value
+
+            return self.async_create_entry(
+                title=f"Renogy {serial_port} #{slave_address}",
+                data=user_input,
+            )
+
+        return self.async_show_form(
+            step_id="serial",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SERIAL_PORT): str,
+                    vol.Required(
+                        CONF_SLAVE_ADDRESS,
+                        default=DEFAULT_SLAVE_ADDRESS,
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=247)),
+                    vol.Required(
+                        CONF_BAUDRATE,
+                        default=DEFAULT_SERIAL_BAUDRATE,
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1200, max=115200)),
+                    **SCAN_INTERVAL_SCHEMA,
+                }
+            ),
             errors=errors,
         )
 

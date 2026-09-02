@@ -13,15 +13,23 @@ from homeassistant.helpers.device_registry import async_get as async_get_device_
 from .const import (
     CONF_DEVICE_TYPE,
     CONF_NON_SHUNT_CONNECTION_MODE,
+    CONF_SERIAL_PORT,
     CONF_SCAN_INTERVAL,
     CONF_SHUNT_CONNECTION_MODE,
+    CONF_SLAVE_ADDRESS,
+    CONF_BAUDRATE,
+    CONF_TRANSPORT,
     DEFAULT_DEVICE_TYPE,
+    DEFAULT_SERIAL_BAUDRATE,
     DEFAULT_NON_SHUNT_CONNECTION_MODE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SHUNT_CONNECTION_MODE,
+    DEFAULT_SLAVE_ADDRESS,
+    DEFAULT_TRANSPORT,
     DOMAIN,
     LOGGER,
     DeviceType,
+    TransportType,
 )
 from .device_name import has_real_device_name
 
@@ -42,6 +50,7 @@ class _CoordinatorShutdownProtocol(Protocol):
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Renogy BLE from a config entry."""
     from .ble import RenogyActiveBluetoothCoordinator
+    from .serial import RenogySerialCoordinator
 
     LOGGER.info("Setting up Renogy BLE integration with entry %s", entry.entry_id)
 
@@ -49,16 +58,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scan_interval = entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     device_address = entry.data.get(CONF_ADDRESS)
     device_type = entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
+    transport = entry.data.get(CONF_TRANSPORT, DEFAULT_TRANSPORT)
     shunt_connection_mode = _get_shunt_connection_mode(entry)
     non_shunt_connection_mode = _get_non_shunt_connection_mode(entry)
 
-    if not device_address:
+    if transport == TransportType.SERIAL.value:
+        serial_port = entry.data.get(CONF_SERIAL_PORT)
+        slave_address = entry.data.get(CONF_SLAVE_ADDRESS, DEFAULT_SLAVE_ADDRESS)
+        baudrate = entry.data.get(CONF_BAUDRATE, DEFAULT_SERIAL_BAUDRATE)
+        if not serial_port:
+            LOGGER.error("No serial port provided in config entry")
+            return False
+
+        device_address = f"serial://{serial_port}/{slave_address}"
+        coordinator = RenogySerialCoordinator(
+            hass=hass,
+            logger=LOGGER,
+            port=serial_port,
+            slave_address=slave_address,
+            baudrate=baudrate,
+            scan_interval=scan_interval,
+            device_type=device_type,
+        )
+    elif not device_address:
         LOGGER.error("No device address provided in config entry")
         return False
+    else:
+        coordinator = RenogyActiveBluetoothCoordinator(
+            hass=hass,
+            logger=LOGGER,
+            address=device_address,
+            scan_interval=scan_interval,
+            device_type=device_type,
+            shunt_connection_mode=shunt_connection_mode,
+            non_shunt_connection_mode=non_shunt_connection_mode,
+            device_data_callback=lambda device: _handle_device_update(
+                hass, entry, device
+            ),
+        )
 
     LOGGER.info(
-        "Configuring Renogy BLE device %s as %s with scan interval %ss "
+        "Configuring Renogy %s device %s as %s with scan interval %ss "
         "(shunt mode: %s, non-shunt mode: %s)",
+        transport,
         device_address,
         device_type,
         scan_interval,
@@ -66,17 +108,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         non_shunt_connection_mode,
     )
 
-    # Create a coordinator for this entry
-    coordinator = RenogyActiveBluetoothCoordinator(
-        hass=hass,
-        logger=LOGGER,
-        address=device_address,
-        scan_interval=scan_interval,
-        device_type=device_type,
-        shunt_connection_mode=shunt_connection_mode,
-        non_shunt_connection_mode=non_shunt_connection_mode,
-        device_data_callback=lambda device: _handle_device_update(hass, entry, device),
-    )
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     # Store coordinator and devices in hass.data

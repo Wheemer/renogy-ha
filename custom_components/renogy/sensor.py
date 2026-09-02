@@ -169,7 +169,7 @@ def _coerce_float(value: Any, *, default: float | None) -> float | None:
     """Return a float when possible, otherwise the provided default."""
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
 
 
@@ -1097,7 +1097,7 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
                 name=device.name,
                 manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {device.address}",
+                hw_version=f"Address: {device.address}",
                 sw_version=device_type.capitalize(),
                 # Add device type as software version for clarity.
             )
@@ -1112,7 +1112,7 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
                 name=f"Renogy {device_type.capitalize()}",
                 manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {coordinator.address}",
+                hw_version=f"Address: {coordinator.address}",
                 sw_version=device_type.capitalize(),
                 # Add device type as software version for clarity.
             )
@@ -1148,7 +1148,7 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
         reset_count = extra_data.get("reset_count", 0)
         try:
             self._energy_reset_count = int(reset_count)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             self._energy_reset_count = 0
         last_reset = extra_data.get("last_reset")
         if isinstance(last_reset, str):
@@ -1182,7 +1182,7 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
                 name=self._device.name,
                 manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {self._device.address}",
+                hw_version=f"Address: {self._device.address}",
                 sw_version=self._device_type.capitalize(),
                 # Add device type as software version.
             )
@@ -1256,7 +1256,7 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
                                     self.name,
                                 )
                                 return None
-                        except ValueError, TypeError:
+                        except (ValueError, TypeError):
                             LOGGER.warning(
                                 "Invalid numeric value for %s: %s",
                                 self.name,

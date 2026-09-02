@@ -22,6 +22,14 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_DEVICE_TYPE = "device_type"  # New constant for device type
 CONF_SHUNT_CONNECTION_MODE = "shunt_connection_mode"
 CONF_NON_SHUNT_CONNECTION_MODE = "non_shunt_connection_mode"
+CONF_TRANSPORT = "transport"
+CONF_SERIAL_PORT = "serial_port"
+CONF_SLAVE_ADDRESS = "slave_address"
+CONF_BAUDRATE = "baudrate"
+
+DEFAULT_TRANSPORT = "bluetooth"
+DEFAULT_SERIAL_BAUDRATE = 9600
+DEFAULT_SLAVE_ADDRESS = 1
 
 # Device info
 ATTR_MANUFACTURER = "Renogy"
@@ -34,6 +42,16 @@ class DeviceType(Enum):
     INVERTER = "inverter"
     DCC = "dcc"  # DC-DC Charger (with or without MPPT)
     SHUNT300 = "shunt300"  # Renogy Shunt300
+
+
+class TransportType(Enum):
+    """Supported ways to talk to a Renogy device."""
+
+    BLUETOOTH = "bluetooth"
+    SERIAL = "serial"
+
+
+TRANSPORT_TYPES = [e.value for e in TransportType]
 
 
 # List of supported device types
