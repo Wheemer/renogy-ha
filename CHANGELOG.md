@@ -1,6 +1,107 @@
 # CHANGELOG
 
 
+## [0.10.0](https://github.com/Wheemer/renogy-ha/compare/v0.9.0...v0.10.0) (2026-09-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* require Home Assistant 2026.3 and Python 3.14.2 ([#84](https://github.com/Wheemer/renogy-ha/issues/84))
+
+### Features
+
+* add Communication Hub multi-battery support ([#208](https://github.com/Wheemer/renogy-ha/issues/208)) ([2bf2b3c](https://github.com/Wheemer/renogy-ha/commit/2bf2b3c43e4eaef48a611443a9d66a5737af8292))
+* add DC-DC charger (DCC) support with writable parameters ([#52](https://github.com/Wheemer/renogy-ha/issues/52)) ([946cf9c](https://github.com/Wheemer/renogy-ha/commit/946cf9c2fe7bebfe4a5375cbaf4afcbe2752ff8c))
+* add model-based device type detection and reconfigure flow ([#173](https://github.com/Wheemer/renogy-ha/issues/173)) ([3e2f011](https://github.com/Wheemer/renogy-ha/commit/3e2f011715409da17ca9f48488dba4199c483d8b))
+* add optional non-shunt transport mode ([#106](https://github.com/Wheemer/renogy-ha/issues/106)) ([f3d9833](https://github.com/Wheemer/renogy-ha/commit/f3d98333c90dad0fdaa5f76626a4bc8fb2d53c39))
+* add REGO-series inverter support (discovery, sensors, controls) ([#183](https://github.com/Wheemer/renogy-ha/issues/183)) ([d475380](https://github.com/Wheemer/renogy-ha/commit/d475380b478b912b93a961c239a4932475a86ce3))
+* add Renogy controller firmware updates ([d1f3510](https://github.com/Wheemer/renogy-ha/commit/d1f351045e9230ea21afcd020c243f9bb44a8a60))
+* Add RIV4835CSH1S inverter profile support ([#217](https://github.com/Wheemer/renogy-ha/issues/217)) ([4b9b87c](https://github.com/Wheemer/renogy-ha/commit/4b9b87c61a1117efac802c2d963c99f48cf6dc8c))
+* add SHUNT300 troubleshooting attributes ([#98](https://github.com/Wheemer/renogy-ha/issues/98)) ([b7007bc](https://github.com/Wheemer/renogy-ha/commit/b7007bc4cecae4bf8886d9913480dd07a3afa523))
+* add Smart Shunt connection modes ([#104](https://github.com/Wheemer/renogy-ha/issues/104)) ([76ad219](https://github.com/Wheemer/renogy-ha/commit/76ad219b3ac3717800c818f403cb9ec440eea9c7))
+* add support for Renogy Smart Shunt 300 ([#77](https://github.com/Wheemer/renogy-ha/issues/77)) ([123013a](https://github.com/Wheemer/renogy-ha/commit/123013ae5fdfe43e50a69c24686a413520e2331c))
+* declare display precision for sensors ([#189](https://github.com/Wheemer/renogy-ha/issues/189)) ([3ac4cf3](https://github.com/Wheemer/renogy-ha/commit/3ac4cf335d713194ad1082b5d85f45263b85a0d9))
+* expose Communication Hub battery current and power ([#213](https://github.com/Wheemer/renogy-ha/issues/213)) ([b8f6673](https://github.com/Wheemer/renogy-ha/commit/b8f6673d70f9a4491823cbbc468505a1cd9c3219))
+* expose configurable runtime resilience knobs ([#184](https://github.com/Wheemer/renogy-ha/issues/184)) ([be94393](https://github.com/Wheemer/renogy-ha/commit/be943934d7b6dd36ee9e4e20faf6ac67e3bd6c13))
+* preserve controller LiFePO4 SOC curve ([cc2745b](https://github.com/Wheemer/renogy-ha/commit/cc2745bc60fcc8cfdaaa42d49953112570c803bb))
+* prompt user for device type ([9150126](https://github.com/Wheemer/renogy-ha/commit/9150126137588ab59dc72a19fba4d6ea7994bd69))
+* recognize RNGPRO-family battery advertisements ([#172](https://github.com/Wheemer/renogy-ha/issues/172)) ([e77f19e](https://github.com/Wheemer/renogy-ha/commit/e77f19e06796f4e3ad60bd8231e2c3bd3d5f4862))
+* require Home Assistant 2026.3 and Python 3.14.2 ([#84](https://github.com/Wheemer/renogy-ha/issues/84)) ([8dd7e98](https://github.com/Wheemer/renogy-ha/commit/8dd7e9857d785b9b0a7e7a6cd9d46a6e6c55f090))
+* support Renogy battery devices ([#121](https://github.com/Wheemer/renogy-ha/issues/121)) ([59ce938](https://github.com/Wheemer/renogy-ha/commit/59ce9384bb280ec46ba2b988148c494e87b5d358))
+* turn controller load on/off ([#57](https://github.com/Wheemer/renogy-ha/issues/57)) ([70e0a6c](https://github.com/Wheemer/renogy-ha/commit/70e0a6c891f7b63240b7d9b242806d7a3f02a5ef))
+* update to latest renogy-ble library ([50542ec](https://github.com/Wheemer/renogy-ha/commit/50542ecbd3a615aaabf2c479bc4b6a1864c9c7fb))
+
+
+### Bug Fixes
+
+* add raw_words to sustained shunt updates ([#123](https://github.com/Wheemer/renogy-ha/issues/123)) ([dd46ea7](https://github.com/Wheemer/renogy-ha/commit/dd46ea75eaf791a891faf9252b817a66e3ed25cd))
+* add traceback to help debugging ([03256fa](https://github.com/Wheemer/renogy-ha/commit/03256fa7466477e4448cd16ff4a05f4da93b0fee))
+* add upgrade fallback for shunt energy restore ([#125](https://github.com/Wheemer/renogy-ha/issues/125)) ([aef7860](https://github.com/Wheemer/renogy-ha/commit/aef78607cf47860fb3f34bd1d9a85e6ff8da4459))
+* aggregate full Modbus frame before parsing ([59cf4b6](https://github.com/Wheemer/renogy-ha/commit/59cf4b68b3aca2916d01c5ac429ad180e5cf7e40))
+* bump renogy-ble to 2.2.2 ([b323b50](https://github.com/Wheemer/renogy-ha/commit/b323b50c17c08729048ac87f0ebdfa76e854dcba))
+* capitalize firmware type ([072e610](https://github.com/Wheemer/renogy-ha/commit/072e61078f347b9edafe8b8e2d7ba0540b88c349))
+* catch and log error during startup ([06363b4](https://github.com/Wheemer/renogy-ha/commit/06363b4fb61c179be0a15f2111f93dadb28c2327))
+* change log level for specific errors ([b6c2e75](https://github.com/Wheemer/renogy-ha/commit/b6c2e751f6d32019617c101d35fc8d37c176a72c))
+* change log severity to debug ([432ba83](https://github.com/Wheemer/renogy-ha/commit/432ba837b042f92a0b2a3dfc3aa37416295cf851))
+* configure log message severities ([d7d3877](https://github.com/Wheemer/renogy-ha/commit/d7d38778f403aac648d5fa947925c5b8d17aea00))
+* defer renogy ble import until setup ([#141](https://github.com/Wheemer/renogy-ha/issues/141)) ([2fe5997](https://github.com/Wheemer/renogy-ha/commit/2fe5997ade93aaf0d3cb20fcb702376e7fa4bdad))
+* **deps:** update renogy-ble from 2.3.0 to 2.3.1 ([2e4a764](https://github.com/Wheemer/renogy-ha/commit/2e4a764af2ee12a382f514547564f09e3a55dbbb))
+* divide Power Generation Total value by 1000 ([eedc7c8](https://github.com/Wheemer/renogy-ha/commit/eedc7c86f6b1e2804bb0cf28a12ee028fa0863dd))
+* divide Power Generation Total value by 1000 ([54545ca](https://github.com/Wheemer/renogy-ha/commit/54545cafd59d97e81a36168c9e8c6ccd576f2371))
+* ensure proper client disconnection ([fe244ea](https://github.com/Wheemer/renogy-ha/commit/fe244eab80b1767146e960196c22ac76752ae989))
+* fix incorrect sensor values when temperatures below 0 degrees ([#48](https://github.com/Wheemer/renogy-ha/issues/48)) ([e2e308f](https://github.com/Wheemer/renogy-ha/commit/e2e308f2fa5e5cd8544337b2c976b8dc97c75954))
+* harden Renogy firmware catalog handling ([71f0bb9](https://github.com/Wheemer/renogy-ha/commit/71f0bb967fc4b24dea8a9a4ee110d8e80e0cd409))
+* harden smart shunt live packet parsing ([#100](https://github.com/Wheemer/renogy-ha/issues/100)) ([be765b8](https://github.com/Wheemer/renogy-ha/commit/be765b88ee46ffd5fe9df87b03da55baba04efba))
+* harden sustained shunt reconnect recovery ([#112](https://github.com/Wheemer/renogy-ha/issues/112)) ([e8e3ab4](https://github.com/Wheemer/renogy-ha/commit/e8e3ab42821cd16be34b83ee389ebe7a3397e28f))
+* honor BLE failure grace for entity availability ([#182](https://github.com/Wheemer/renogy-ha/issues/182)) ([6780630](https://github.com/Wheemer/renogy-ha/commit/67806301ce25f29ae4d77be91eeb8e87c7501292))
+* improve log clarity when device fails to connect ([eb789ce](https://github.com/Wheemer/renogy-ha/commit/eb789cef17619b3ddc94bbfe8804cd75a11630a3))
+* make firmware login work with Renogy API ([f959ef3](https://github.com/Wheemer/renogy-ha/commit/f959ef30c8e5b4c9e909466b7787e85d2d353b16))
+* manually bump version ([97130bb](https://github.com/Wheemer/renogy-ha/commit/97130bb2371a8294744355442c8d289d70a445fc))
+* narrow total power generation value ([#180](https://github.com/Wheemer/renogy-ha/issues/180)) ([31bd52f](https://github.com/Wheemer/renogy-ha/commit/31bd52f08d62a46fbf845d630e63aa1ae370cbbf))
+* preserve entity IDs with device-based names ([#181](https://github.com/Wheemer/renogy-ha/issues/181)) ([25bb5a9](https://github.com/Wheemer/renogy-ha/commit/25bb5a93ef8fa4caf1d9d866d90a82fbe12a4d35))
+* protect active controller firmware updates ([380ef87](https://github.com/Wheemer/renogy-ha/commit/380ef8799a12ab0df779954252e98d6772211afb))
+* rate limit firmware catalog retries ([528496a](https://github.com/Wheemer/renogy-ha/commit/528496ad792a9ddfe918b3eaf6a81eeb53792994))
+* reduce connection errors with bleak-retry-connector ([763455f](https://github.com/Wheemer/renogy-ha/commit/763455fc472fd1ab7f329020ed8c73c5bfd0ee01))
+* refresh expired Renogy firmware sessions ([5c21b82](https://github.com/Wheemer/renogy-ha/commit/5c21b82b947642e384ed5f8282a25d73f9d24e75))
+* remove blocking startup waits ([#101](https://github.com/Wheemer/renogy-ha/issues/101)) ([3be4ed1](https://github.com/Wheemer/renogy-ha/commit/3be4ed1a6fedcc6e24c3b476ae02078f26f23203))
+* remove invalid HACS keys ([944643d](https://github.com/Wheemer/renogy-ha/commit/944643de382969438d735bf96c0ef8f52debe69a))
+* remove invalid key from manifest ([9d98ad3](https://github.com/Wheemer/renogy-ha/commit/9d98ad3f3d33ae84d75b6ddd2d4772a8c5a10ebd))
+* report none when missing data for Power Generation Total sensor ([2520523](https://github.com/Wheemer/renogy-ha/commit/252052342cf57eb352e3c80caa000ecc6662ddcd))
+* restore clean repository workflows ([3647c1c](https://github.com/Wheemer/renogy-ha/commit/3647c1c47c949e02ecefd5a551737a0fe93e7227))
+* restore Smart Shunt energy totals across Home Assistant restarts ([#124](https://github.com/Wheemer/renogy-ha/issues/124)) ([27ddbcc](https://github.com/Wheemer/renogy-ha/commit/27ddbccc7c99e113a80beeabc23ec14c4f13622f))
+* restrict to Python &gt;=3.13 due to Home Assistant constraints ([12e10cd](https://github.com/Wheemer/renogy-ha/commit/12e10cd1e744293631ee2b7d210a320203cf9482))
+* support bleak 2.0.0+ and Home Assistant Core 2026.1.0 ([#46](https://github.com/Wheemer/renogy-ha/issues/46)) ([8996d5c](https://github.com/Wheemer/renogy-ha/commit/8996d5c2bb1ac306fbe5310900ee18ffc0254f64))
+* support signed integers for temperature values ([#25](https://github.com/Wheemer/renogy-ha/issues/25)) ([bbf7ad0](https://github.com/Wheemer/renogy-ha/commit/bbf7ad010deff632c06cf1133ea073958f9f5dd5))
+* sync version in pyproject.toml and manifest.json ([c673422](https://github.com/Wheemer/renogy-ha/commit/c67342272f5e3ce166e2628587717abe6b68b530))
+* try syncing version again ([d6414fb](https://github.com/Wheemer/renogy-ha/commit/d6414fbdf8e9de92c9db53f264d7a49916e217bf))
+* tweak log severities ([d9a82e7](https://github.com/Wheemer/renogy-ha/commit/d9a82e72b5bd4b0db514e35ab5f95c244fd52a0c))
+* Update name to match throughout code ([a4cc088](https://github.com/Wheemer/renogy-ha/commit/a4cc0889fd74536af240e8b69b6a76f54a02d890))
+* update pyproject.toml to support Python &gt;=3.10 ([3e74f25](https://github.com/Wheemer/renogy-ha/commit/3e74f25956a10f15cd30501ebaaf7512e5438ce4))
+* update renogy-ble dependency version to 1.2.1a12 ([3f504b7](https://github.com/Wheemer/renogy-ha/commit/3f504b71722f6b4a55e8b944169ac0d05e4927f1))
+* update renogy-ble dependency version to 1.2.1a13 ([e88c19b](https://github.com/Wheemer/renogy-ha/commit/e88c19be0908d3398b5e351999b47790f1eb364f))
+* update to use new renogy-ble parse signature ([38db89a](https://github.com/Wheemer/renogy-ha/commit/38db89a2da218d11f9201284e9af5cda8e4cf6ce))
+* use device_type as temporary model name ([1ce2002](https://github.com/Wheemer/renogy-ha/commit/1ce200258b1a691c9f945fb1c0706a13dff7ead7))
+* use github token for beta release workflow ([#86](https://github.com/Wheemer/renogy-ha/issues/86)) ([d8a3764](https://github.com/Wheemer/renogy-ha/commit/d8a3764d19608d25b4533bc082b976be16fd325f))
+* use version_variables for json version update ([b95bdc7](https://github.com/Wheemer/renogy-ha/commit/b95bdc764930e239d28e69a4edcb127b9f311fcd))
+* write DCC solar cutoff current in centiamps ([#188](https://github.com/Wheemer/renogy-ha/issues/188)) ([6414c4e](https://github.com/Wheemer/renogy-ha/commit/6414c4edf686f159782f4a19eea6a90975325909))
+
+
+### Documentation
+
+* add AGENTS.md ([4bf216a](https://github.com/Wheemer/renogy-ha/commit/4bf216a5625d7fbe5709f5975bc22cab7e444bb0))
+* add contributing guidelines for the project ([#71](https://github.com/Wheemer/renogy-ha/issues/71)) ([4854c38](https://github.com/Wheemer/renogy-ha/commit/4854c38f5179004fde23677ba71c913bf2eaa691))
+* add documentation on how to update to a test version ([e9da900](https://github.com/Wheemer/renogy-ha/commit/e9da90068530ec6e1e707041cf9a49aa4ba27746))
+* add hardware section to README ([c3d4556](https://github.com/Wheemer/renogy-ha/commit/c3d4556e90dc007910bdec44e0396e220620bc2e))
+* add workflow badges ([34b22c7](https://github.com/Wheemer/renogy-ha/commit/34b22c742d2989ec4a6f5879e2f92c250b1b7844))
+* explain connection modes introduced in 0.6.0 ([#115](https://github.com/Wheemer/renogy-ha/issues/115)) ([63b65a5](https://github.com/Wheemer/renogy-ha/commit/63b65a5ccc30a582293c99d5c823d28efb2dedc0))
+* fix test_branch image reference ([81280de](https://github.com/Wheemer/renogy-ha/commit/81280def0553641bfe503fb54f6ac3934eb22232))
+* move older planning files into folder ([e045436](https://github.com/Wheemer/renogy-ha/commit/e04543635f56a78f8056c8c838105619e96e5b25))
+* refresh fork README ([bc11317](https://github.com/Wheemer/renogy-ha/commit/bc11317b29aea6f4cfd8529069001baa671a0aa2))
+* refresh supported devices and setup guidance ([#190](https://github.com/Wheemer/renogy-ha/issues/190)) ([baa44a4](https://github.com/Wheemer/renogy-ha/commit/baa44a4c38a2cc6aea5ac005b3253e8900dd3697))
+* update README after testing with Wanderer ([bf1478a](https://github.com/Wheemer/renogy-ha/commit/bf1478a263f304fc8f9bd2282103482bfa296347))
+* update readme to reflect that renogy-ha is now a default HACS repository ([#99](https://github.com/Wheemer/renogy-ha/issues/99)) ([91fc00e](https://github.com/Wheemer/renogy-ha/commit/91fc00eaac06eae8dfe8e16343d71fd554385da4))
+* update README with debug logging instructions ([5c98be2](https://github.com/Wheemer/renogy-ha/commit/5c98be22450c4106c664d5f08b0d6f6bd3915014))
+
 ## [0.9.0](https://github.com/IAmTheMitchell/renogy-ha/compare/v0.8.0...v0.9.0) (2026-08-26)
 
 
