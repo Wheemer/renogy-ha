@@ -83,7 +83,8 @@ def parsed_firmware_version(version: str | None) -> tuple[int, int, int] | None:
     match = FIRMWARE_VERSION_PATTERN.fullmatch((version or "").strip())
     if match is None:
         return None
-    return tuple(int(part) for part in match.groups())
+    major, minor, patch = match.groups()
+    return int(major), int(minor), int(patch)
 
 
 class RenogyFirmwareAuthStore:
