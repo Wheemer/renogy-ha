@@ -1,6 +1,9 @@
 <div align="center">
 
-# Renogy for Home Assistant
+<h1>
+  <img src="custom_components/renogy/brand/icon.png" width="56" alt="Renogy integration icon" align="center">
+  Renogy for Home Assistant
+</h1>
 
 ### Local Bluetooth monitoring, control, and guarded Rover firmware updates
 
