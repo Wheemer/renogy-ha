@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -21,6 +22,7 @@ RENOGY_OTA_CATALOG_PATH = "/api/v1/device/user/me/getBleOTAFirmwareList"
 ROVER_30_SKU = "RNG-CTRL-RVR30"
 CONTROLLER_TYPE_ID = 14
 RENOGY_EXPIRED_TOKEN_CODES = {"SEC002", "SEC003"}
+RENOGY_APP_VERSION = "1.10.80"
 
 RENOGY_READ_CHAR_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
 RENOGY_WRITE_CHAR_UUID = "0000ffd1-0000-1000-8000-00805f9b34fb"
@@ -97,10 +99,12 @@ class RenogyFirmwareClient:
         self,
         session: ClientSession,
         auth: RenogyFirmwareAuth | None = None,
+        identity_uuid: str | None = None,
     ) -> None:
         """Initialize the API client."""
         self._session = session
         self.auth = auth
+        self._identity_uuid = identity_uuid or str(uuid.uuid4())
 
     async def async_login(self, identifier: str, password: str) -> RenogyFirmwareAuth:
         """Exchange a Renogy account login for access and refresh tokens."""
@@ -212,7 +216,7 @@ class RenogyFirmwareClient:
             return await self._session.get(
                 f"{RENOGY_API_BASE}{RENOGY_OTA_CATALOG_PATH}",
                 params={"sku": sku, "typeId": type_id},
-                headers={"x-token": self.auth.access_token},
+                headers=self._api_headers(include_token=True),
             )
         except ClientError as err:
             raise RenogyFirmwareError(
@@ -229,8 +233,15 @@ class RenogyFirmwareClient:
     ) -> dict:
         """Make an API request and decode Renogy's response envelope."""
         try:
+            request_headers = self._api_headers(include_token=False)
+            supplied_headers = kwargs.pop("headers", None)
+            if supplied_headers:
+                request_headers.update(supplied_headers)
             response = await self._session.request(
-                method, f"{RENOGY_API_BASE}{path}", **kwargs
+                method,
+                f"{RENOGY_API_BASE}{path}",
+                headers=request_headers,
+                **kwargs,
             )
         except ClientError as err:
             raise RenogyFirmwareError(
@@ -248,7 +259,7 @@ class RenogyFirmwareClient:
             raise RenogyFirmwareError("Renogy returned an invalid response") from err
         if response.status >= 400 or not isinstance(payload, dict):
             message = payload.get("msg") if isinstance(payload, dict) else None
-            if response.status in (401, 403):
+            if auth_error or response.status in (401, 403):
                 raise RenogyFirmwareAuthError(message or "Renogy login was rejected")
             raise RenogyFirmwareError(
                 message or f"Renogy request failed with HTTP {response.status}"
@@ -260,6 +271,22 @@ class RenogyFirmwareClient:
                 raise RenogyFirmwareAuthError(message)
             raise RenogyFirmwareError(message)
         return payload
+
+    def _api_headers(self, *, include_token: bool) -> dict[str, str]:
+        """Return the device headers required by Renogy's Android API."""
+        headers = {
+            "Accept-Language": "en-CA",
+            "User-Agent": "Renogy Home Assistant Integration/0.9.0",
+            "app-version": RENOGY_APP_VERSION,
+            "device-mode": "Home Assistant",
+            "device-version": "2026.9",
+            "device-manufacturer": "Home Assistant",
+            "identity-uuid": self._identity_uuid,
+            "request-channel": "android",
+        }
+        if include_token and self.auth is not None:
+            headers["x-token"] = self.auth.access_token
+        return headers
 
     @staticmethod
     def _parse_auth(
@@ -279,6 +306,11 @@ class RenogyFirmwareClient:
         parsed = urlparse(url)
         if parsed.scheme != "https" or not parsed.hostname:
             raise RenogyFirmwareError("Renogy returned an unsafe firmware URL")
+
+
+def firmware_identity_uuid(entry_id: str) -> str:
+    """Return a stable API device identity for one Home Assistant entry."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"home-assistant://renogy/{entry_id}"))
 
 
 def _modbus_crc(data: bytes) -> bytes:

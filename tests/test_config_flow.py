@@ -725,6 +725,7 @@ def _schema_keys(data_schema: vol.Schema) -> set[str]:
 def _options_entry(const_module: Any, device_type: str, options: Any = None) -> Any:
     """Build a stub config entry for options-flow tests."""
     return types.SimpleNamespace(
+        entry_id="entry-1",
         data={const_module.CONF_DEVICE_TYPE: device_type},
         options=options or {},
     )
@@ -747,8 +748,35 @@ def test_options_flow_shows_all_three_knobs() -> None:
         const_module.CONF_UNAVAILABLE_RETRY_INTERVAL,
         const_module.CONF_FIRMWARE_IDENTIFIER,
         const_module.CONF_FIRMWARE_PASSWORD,
-        const_module.CONF_FIRMWARE_CLEAR_AUTH,
     }
+    assert const_module.CONF_FIRMWARE_CLEAR_AUTH not in _schema_keys(
+        form["data_schema"]
+    )
+    ordered_keys = [key.schema for key in form["data_schema"].schema]
+    assert ordered_keys[:2] == [
+        const_module.CONF_FIRMWARE_IDENTIFIER,
+        const_module.CONF_FIRMWARE_PASSWORD,
+    ]
+
+
+def test_options_flow_only_shows_sign_out_for_connected_account() -> None:
+    """The firmware sign-out control is relevant only when tokens exist."""
+    config_flow_module = _load_config_flow_module()
+    const_module = importlib.import_module("custom_components.renogy.const")
+    entry = _options_entry(const_module, const_module.DeviceType.CONTROLLER.value)
+    handler = config_flow_module.RenogyOptionsFlowHandler(entry)
+    handler.hass = MagicMock()
+    handler.hass.data = {
+        const_module.DOMAIN: {
+            entry.entry_id: {
+                "firmware_manager": MagicMock(client=MagicMock(auth=object()))
+            }
+        }
+    }
+
+    form = asyncio.run(handler.async_step_init(None))
+
+    assert const_module.CONF_FIRMWARE_CLEAR_AUTH in _schema_keys(form["data_schema"])
 
 
 def test_options_flow_shunt_shows_knobs_and_connection_mode() -> None:

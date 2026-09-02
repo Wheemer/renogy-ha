@@ -173,6 +173,7 @@ def _build_non_shunt_options_schema(
     config_entry: ConfigEntry,
     default_mode: str,
     default_hub_enabled: bool,
+    firmware_auth_configured: bool = False,
 ) -> vol.Schema:
     """Build non-shunt connection and Communication Hub options."""
     firmware_fields: dict[Any, Any] = {}
@@ -187,10 +188,14 @@ def _build_non_shunt_options_schema(
             vol.Optional(CONF_FIRMWARE_PASSWORD): selector.TextSelector(
                 selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
             ),
-            vol.Optional(CONF_FIRMWARE_CLEAR_AUTH, default=False): bool,
         }
+        if firmware_auth_configured:
+            firmware_fields[vol.Optional(CONF_FIRMWARE_CLEAR_AUTH, default=False)] = (
+                bool
+            )
     return vol.Schema(
         {
+            **firmware_fields,
             vol.Required(
                 CONF_NON_SHUNT_CONNECTION_MODE,
                 default=default_mode,
@@ -200,7 +205,6 @@ def _build_non_shunt_options_schema(
                 default=default_hub_enabled,
             ): bool,
             **_runtime_options_schema_dict(config_entry),
-            **firmware_fields,
         }
     )
 
@@ -550,6 +554,15 @@ class RenogyOptionsFlowHandler(OptionsFlow):
         """Initialize the options flow."""
         self._config_entry = config_entry
 
+    def _firmware_auth_configured(self) -> bool:
+        """Return whether this loaded entry already has firmware API tokens."""
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return False
+        entry_data = hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id, {})
+        manager = entry_data.get("firmware_manager")
+        return manager is not None and manager.client.auth is not None
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -590,6 +603,7 @@ class RenogyOptionsFlowHandler(OptionsFlow):
                     self._config_entry,
                     current_mode,
                     current_hub_enabled,
+                    self._firmware_auth_configured(),
                 ),
                 errors=errors,
             )
@@ -608,6 +622,7 @@ class RenogyOptionsFlowHandler(OptionsFlow):
                 self._config_entry,
                 current_mode,
                 current_hub_enabled,
+                self._firmware_auth_configured(),
             ),
         )
 
@@ -636,10 +651,14 @@ class RenogyOptionsFlowHandler(OptionsFlow):
             RenogyFirmwareAuthStore,
             RenogyFirmwareClient,
             RenogyFirmwareError,
+            firmware_identity_uuid,
         )
 
         store = RenogyFirmwareAuthStore(self.hass, self._config_entry.entry_id)
-        client = RenogyFirmwareClient(async_get_clientsession(self.hass))
+        client = RenogyFirmwareClient(
+            async_get_clientsession(self.hass),
+            identity_uuid=firmware_identity_uuid(self._config_entry.entry_id),
+        )
         try:
             auth = await client.async_login(identifier, password)
         except RenogyFirmwareAuthError:

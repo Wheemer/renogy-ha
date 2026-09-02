@@ -54,9 +54,9 @@
           "scan_interval": "Polling interval (seconds)",
           "max_failures": "Failed polls before unavailable",
           "unavailable_retry_interval": "Reconnect interval while unavailable (minutes)",
-          "firmware_identifier": "Renogy account email or identifier",
+          "firmware_identifier": "Renogy account email",
           "firmware_password": "Renogy account password",
-          "firmware_clear_auth": "Remove saved firmware account"
+          "firmware_clear_auth": "Sign out of firmware updates"
         }
       }
     }

@@ -141,13 +141,14 @@ def _load_update_module() -> Any:
             return None
 
     class RenogyFirmwareClient:
-        def __init__(self, _session: Any) -> None:
+        def __init__(self, _session: Any, **_kwargs: Any) -> None:
             self.auth = None
 
     firmware.RenogyFirmwareError = RenogyFirmwareError
     firmware.RenogyFirmwareRelease = RenogyFirmwareRelease
     firmware.RenogyFirmwareAuthStore = RenogyFirmwareAuthStore
     firmware.RenogyFirmwareClient = RenogyFirmwareClient
+    firmware.firmware_identity_uuid = lambda entry_id: f"identity-{entry_id}"
     sys.modules["custom_components.renogy.firmware"] = firmware
 
     name = "custom_components.renogy.update"

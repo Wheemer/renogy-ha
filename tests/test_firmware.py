@@ -117,6 +117,38 @@ async def test_api_envelope_error_is_not_treated_as_empty_catalog() -> None:
 
 
 @pytest.mark.asyncio
+async def test_login_sends_required_android_api_headers() -> None:
+    """Renogy rejects otherwise valid login requests without device headers."""
+    response = _FakeJsonResponse(
+        {"code": "UAC102", "msg": "Incorrect account or password."}, status=400
+    )
+    session = SimpleNamespace(request=AsyncMock(return_value=response))
+    client = firmware_module.RenogyFirmwareClient(
+        session, identity_uuid="58e1b1cc-4edf-4ac9-8361-137fdc193f5b"
+    )
+
+    with pytest.raises(
+        firmware_module.RenogyFirmwareAuthError,
+        match="Incorrect account or password",
+    ):
+        await client.async_login("owner@example.com", "incorrect")
+
+    headers = session.request.await_args.kwargs["headers"]
+    assert headers["app-version"] == firmware_module.RENOGY_APP_VERSION
+    assert headers["identity-uuid"] == "58e1b1cc-4edf-4ac9-8361-137fdc193f5b"
+    assert headers["request-channel"] == "android"
+    assert headers["device-mode"] == "Home Assistant"
+
+
+def test_firmware_identity_is_stable_per_config_entry() -> None:
+    """Login and later catalog checks must present the same device identity."""
+    first = firmware_module.firmware_identity_uuid("entry-1")
+
+    assert first == firmware_module.firmware_identity_uuid("entry-1")
+    assert first != firmware_module.firmware_identity_uuid("entry-2")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("code", ["SEC002", "SEC003"])
 async def test_catalog_refreshes_app_reported_expired_token(code: str) -> None:
     """Match DC Home's token interceptor for HTTP-200 expiry responses."""

@@ -31,6 +31,7 @@ from .firmware import (
     RenogyFirmwareClient,
     RenogyFirmwareError,
     RenogyFirmwareRelease,
+    firmware_identity_uuid,
 )
 
 FIRMWARE_CHECK_INTERVAL = timedelta(hours=12)
@@ -54,7 +55,10 @@ class RenogyFirmwareManager:
         self.entry = entry
         self.coordinator = coordinator
         self.store = RenogyFirmwareAuthStore(hass, entry.entry_id)
-        self.client = RenogyFirmwareClient(async_get_clientsession(hass))
+        self.client = RenogyFirmwareClient(
+            async_get_clientsession(hass),
+            identity_uuid=firmware_identity_uuid(entry.entry_id),
+        )
         self.release: RenogyFirmwareRelease | None = None
         self.last_error: str | None = None
         self.catalog_checked = False
