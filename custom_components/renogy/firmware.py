@@ -20,6 +20,7 @@ RENOGY_REFRESH_PATH = "/api/v1/account/app/do_refresh"
 RENOGY_OTA_CATALOG_PATH = "/api/v1/device/user/me/getBleOTAFirmwareList"
 ROVER_30_SKU = "RNG-CTRL-RVR30"
 CONTROLLER_TYPE_ID = 14
+RENOGY_EXPIRED_TOKEN_CODES = {"SEC002", "SEC003"}
 
 RENOGY_READ_CHAR_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
 RENOGY_WRITE_CHAR_UUID = "0000ffd1-0000-1000-8000-00805f9b34fb"
@@ -139,13 +140,22 @@ class RenogyFirmwareClient:
         if self.auth is None:
             raise RenogyFirmwareAuthError("Renogy account is not configured")
 
+        refreshed_auth = False
         response = await self._async_catalog_request(sku, type_id)
         if response.status == 401:
             response.release()
             await self.async_refresh_auth()
+            refreshed_auth = True
             response = await self._async_catalog_request(sku, type_id)
 
-        payload = await self._async_read_json(response)
+        try:
+            payload = await self._async_read_json(response)
+        except RenogyFirmwareAuthError:
+            if refreshed_auth:
+                raise
+            await self.async_refresh_auth()
+            response = await self._async_catalog_request(sku, type_id)
+            payload = await self._async_read_json(response)
         data = payload.get("data")
         if not isinstance(data, list) or not data:
             return None
@@ -246,7 +256,7 @@ class RenogyFirmwareClient:
         api_code = payload.get("code")
         if api_code is not None and str(api_code) != "000000":
             message = str(payload.get("msg") or payload.get("message") or api_code)
-            if auth_error:
+            if auth_error or str(api_code) in RENOGY_EXPIRED_TOKEN_CODES:
                 raise RenogyFirmwareAuthError(message)
             raise RenogyFirmwareError(message)
         return payload

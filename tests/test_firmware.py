@@ -44,6 +44,9 @@ class _FakeJsonResponse:
         del content_type
         return self.payload
 
+    def release(self) -> None:
+        """Mirror the response cleanup used for HTTP authentication failures."""
+
 
 class _FakeContent:
     """Stream a fixed list of firmware chunks."""
@@ -111,6 +114,44 @@ async def test_api_envelope_error_is_not_treated_as_empty_catalog() -> None:
 
     with pytest.raises(firmware_module.RenogyFirmwareError, match="TOKEN_IS_REQUIRED"):
         await client._async_read_json(response)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["SEC002", "SEC003"])
+async def test_catalog_refreshes_app_reported_expired_token(code: str) -> None:
+    """Match DC Home's token interceptor for HTTP-200 expiry responses."""
+    expired = _FakeJsonResponse({"code": code, "msg": "expired", "data": None})
+    refreshed = _FakeJsonResponse({"code": "000000", "data": []})
+    session = SimpleNamespace(get=AsyncMock(side_effect=[expired, refreshed]))
+    client = firmware_module.RenogyFirmwareClient(
+        session,
+        firmware_module.RenogyFirmwareAuth("old-access", "refresh-token"),
+    )
+    client.async_refresh_auth = AsyncMock()
+
+    release = await client.async_get_latest_release(firmware_module.ROVER_30_SKU)
+
+    assert release is None
+    client.async_refresh_auth.assert_awaited_once()
+    assert session.get.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_catalog_does_not_loop_when_refreshed_token_is_rejected() -> None:
+    """A failed replacement token stops after the app's single retry."""
+    unauthorized = _FakeJsonResponse({"code": "SEC003", "data": None}, status=401)
+    session = SimpleNamespace(get=AsyncMock(side_effect=[unauthorized, unauthorized]))
+    client = firmware_module.RenogyFirmwareClient(
+        session,
+        firmware_module.RenogyFirmwareAuth("old-access", "refresh-token"),
+    )
+    client.async_refresh_auth = AsyncMock()
+
+    with pytest.raises(firmware_module.RenogyFirmwareAuthError):
+        await client.async_get_latest_release(firmware_module.ROVER_30_SKU)
+
+    client.async_refresh_auth.assert_awaited_once()
+    assert session.get.await_count == 2
 
 
 def test_refresh_auth_keeps_existing_refresh_token() -> None:
