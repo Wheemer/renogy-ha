@@ -111,6 +111,7 @@ class RenogyFirmwareClient:
                 "credential": password,
                 "loginType": 0,
             },
+            auth_error=True,
         )
         self.auth = self._parse_auth(payload)
         return self.auth
@@ -119,12 +120,16 @@ class RenogyFirmwareClient:
         """Refresh an expired access token."""
         if self.auth is None or not self.auth.refresh_token:
             raise RenogyFirmwareAuthError("Renogy account is not configured")
+        previous_refresh_token = self.auth.refresh_token
         payload = await self._async_json_request(
             "POST",
             RENOGY_REFRESH_PATH,
             json={"refreshToken": self.auth.refresh_token},
+            auth_error=True,
         )
-        self.auth = self._parse_auth(payload)
+        self.auth = self._parse_auth(
+            payload, fallback_refresh_token=previous_refresh_token
+        )
         return self.auth
 
     async def async_get_latest_release(
@@ -134,19 +139,11 @@ class RenogyFirmwareClient:
         if self.auth is None:
             raise RenogyFirmwareAuthError("Renogy account is not configured")
 
-        response = await self._session.get(
-            f"{RENOGY_API_BASE}{RENOGY_OTA_CATALOG_PATH}",
-            params={"sku": sku, "typeId": type_id},
-            headers={"x-token": self.auth.access_token},
-        )
+        response = await self._async_catalog_request(sku, type_id)
         if response.status == 401:
             response.release()
             await self.async_refresh_auth()
-            response = await self._session.get(
-                f"{RENOGY_API_BASE}{RENOGY_OTA_CATALOG_PATH}",
-                params={"sku": sku, "typeId": type_id},
-                headers={"x-token": self.auth.access_token},
-            )
+            response = await self._async_catalog_request(sku, type_id)
 
         payload = await self._async_read_json(response)
         data = payload.get("data")
@@ -168,15 +165,28 @@ class RenogyFirmwareClient:
     async def async_download(self, release: RenogyFirmwareRelease) -> bytes:
         """Download and verify a firmware image."""
         self._validate_download_url(release.url)
-        async with self._session.get(release.url) as response:
-            if response.status >= 400:
-                raise RenogyFirmwareError(
-                    f"Firmware download failed with HTTP {response.status}"
-                )
-            content_length = response.content_length
-            if content_length and content_length > OTA_MAX_FIRMWARE_BYTES:
-                raise RenogyFirmwareError("Firmware image exceeds the safety limit")
-            firmware = await response.read()
+        try:
+            async with self._session.get(release.url) as response:
+                if response.status >= 400:
+                    raise RenogyFirmwareError(
+                        f"Firmware download failed with HTTP {response.status}"
+                    )
+                content_length = response.content_length
+                if content_length and content_length > OTA_MAX_FIRMWARE_BYTES:
+                    raise RenogyFirmwareError("Firmware image exceeds the safety limit")
+                firmware_buffer = bytearray()
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    firmware_buffer.extend(chunk)
+                    if len(firmware_buffer) > OTA_MAX_FIRMWARE_BYTES:
+                        raise RenogyFirmwareError(
+                            "Firmware image exceeds the safety limit"
+                        )
+        except ClientError as err:
+            raise RenogyFirmwareError(
+                "Could not download firmware from Renogy"
+            ) from err
+
+        firmware = bytes(firmware_buffer)
 
         if not firmware or len(firmware) > OTA_MAX_FIRMWARE_BYTES:
             raise RenogyFirmwareError("Firmware image is empty or too large")
@@ -185,7 +195,28 @@ class RenogyFirmwareClient:
             raise RenogyFirmwareError("Firmware MD5 does not match Renogy's catalog")
         return firmware
 
-    async def _async_json_request(self, method: str, path: str, **kwargs: Any) -> dict:
+    async def _async_catalog_request(self, sku: str, type_id: int) -> ClientResponse:
+        """Start one authenticated catalog request with normalized network errors."""
+        assert self.auth is not None
+        try:
+            return await self._session.get(
+                f"{RENOGY_API_BASE}{RENOGY_OTA_CATALOG_PATH}",
+                params={"sku": sku, "typeId": type_id},
+                headers={"x-token": self.auth.access_token},
+            )
+        except ClientError as err:
+            raise RenogyFirmwareError(
+                "Could not reach Renogy's firmware service"
+            ) from err
+
+    async def _async_json_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        auth_error: bool = False,
+        **kwargs: Any,
+    ) -> dict:
         """Make an API request and decode Renogy's response envelope."""
         try:
             response = await self._session.request(
@@ -195,9 +226,11 @@ class RenogyFirmwareClient:
             raise RenogyFirmwareError(
                 "Could not reach Renogy's firmware service"
             ) from err
-        return await self._async_read_json(response)
+        return await self._async_read_json(response, auth_error=auth_error)
 
-    async def _async_read_json(self, response: ClientResponse) -> dict:
+    async def _async_read_json(
+        self, response: ClientResponse, *, auth_error: bool = False
+    ) -> dict:
         """Decode one Renogy response and retain its useful error message."""
         try:
             payload = await response.json(content_type=None)
@@ -210,15 +243,23 @@ class RenogyFirmwareClient:
             raise RenogyFirmwareError(
                 message or f"Renogy request failed with HTTP {response.status}"
             )
+        api_code = payload.get("code")
+        if api_code is not None and str(api_code) != "000000":
+            message = str(payload.get("msg") or payload.get("message") or api_code)
+            if auth_error:
+                raise RenogyFirmwareAuthError(message)
+            raise RenogyFirmwareError(message)
         return payload
 
     @staticmethod
-    def _parse_auth(payload: dict) -> RenogyFirmwareAuth:
+    def _parse_auth(
+        payload: dict, fallback_refresh_token: str | None = None
+    ) -> RenogyFirmwareAuth:
         data = payload.get("data")
         if not isinstance(data, dict):
             raise RenogyFirmwareAuthError(payload.get("msg") or "Login failed")
         access_token = str(data.get("accessToken") or "")
-        refresh_token = str(data.get("refreshToken") or "")
+        refresh_token = str(data.get("refreshToken") or fallback_refresh_token or "")
         if not access_token or not refresh_token:
             raise RenogyFirmwareAuthError(payload.get("msg") or "Login failed")
         return RenogyFirmwareAuth(access_token, refresh_token)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -32,6 +33,60 @@ def _load_firmware_module() -> Any:
 firmware_module = _load_firmware_module()
 
 
+class _FakeJsonResponse:
+    """Minimal aiohttp response for API-envelope tests."""
+
+    def __init__(self, payload: Any, status: int = 200) -> None:
+        self.payload = payload
+        self.status = status
+
+    async def json(self, *, content_type: Any = None) -> Any:
+        del content_type
+        return self.payload
+
+
+class _FakeContent:
+    """Stream a fixed list of firmware chunks."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+
+    async def iter_chunked(self, _size: int) -> Any:
+        for chunk in self.chunks:
+            yield chunk
+
+
+class _FakeDownloadResponse:
+    """Minimal async context manager returned by ClientSession.get."""
+
+    def __init__(
+        self,
+        chunks: list[bytes],
+        *,
+        status: int = 200,
+        content_length: int | None = None,
+    ) -> None:
+        self.status = status
+        self.content_length = content_length
+        self.content = _FakeContent(chunks)
+
+    async def __aenter__(self) -> _FakeDownloadResponse:
+        return self
+
+    async def __aexit__(self, *_args: Any) -> None:
+        return None
+
+
+class _FakeDownloadSession:
+    """Return one prepared firmware response."""
+
+    def __init__(self, response: _FakeDownloadResponse) -> None:
+        self.response = response
+
+    def get(self, _url: str) -> _FakeDownloadResponse:
+        return self.response
+
+
 def test_bootloader_command_matches_android_protocol() -> None:
     """The broadcast boot command must include the exact Modbus CRC."""
     assert firmware_module.build_bootloader_command().hex() == "ff4100000000281b"
@@ -46,6 +101,64 @@ def test_ota_packet_padding_checksum_and_sequence_wrap() -> None:
     assert packet[3:5] == b"\x01\x02"
     assert packet[5:-1] == bytes((firmware_module.OTA_PAD_BYTE,)) * 126
     assert packet[-1] == sum(packet[3:-1]) & 0xFF
+
+
+@pytest.mark.asyncio
+async def test_api_envelope_error_is_not_treated_as_empty_catalog() -> None:
+    """Renogy often reports service errors inside an HTTP 200 response."""
+    client = firmware_module.RenogyFirmwareClient(SimpleNamespace())
+    response = _FakeJsonResponse({"code": "TOKEN_IS_REQUIRED", "data": None})
+
+    with pytest.raises(firmware_module.RenogyFirmwareError, match="TOKEN_IS_REQUIRED"):
+        await client._async_read_json(response)
+
+
+def test_refresh_auth_keeps_existing_refresh_token() -> None:
+    """The app preserves the old refresh token when refresh returns only access."""
+    auth = firmware_module.RenogyFirmwareClient._parse_auth(
+        {"data": {"accessToken": "new-access"}},
+        fallback_refresh_token="existing-refresh",
+    )
+
+    assert auth.access_token == "new-access"
+    assert auth.refresh_token == "existing-refresh"
+
+
+@pytest.mark.asyncio
+async def test_download_stream_is_verified() -> None:
+    """A streamed image is accepted only when it matches the catalog MD5."""
+    firmware = b"verified firmware"
+    release = firmware_module.RenogyFirmwareRelease(
+        version="1.2.3",
+        url="https://example.com/controller.bin",
+        md5=hashlib.md5(firmware, usedforsecurity=False).hexdigest(),
+        sku=firmware_module.ROVER_30_SKU,
+    )
+    session = _FakeDownloadSession(_FakeDownloadResponse([firmware[:5], firmware[5:]]))
+
+    result = await firmware_module.RenogyFirmwareClient(session).async_download(release)
+
+    assert result == firmware
+
+
+@pytest.mark.asyncio
+async def test_download_without_content_length_still_enforces_limit(
+    monkeypatch: Any,
+) -> None:
+    """Chunked downloads cannot bypass the firmware size safety limit."""
+    monkeypatch.setattr(firmware_module, "OTA_MAX_FIRMWARE_BYTES", 4)
+    release = firmware_module.RenogyFirmwareRelease(
+        version="1.2.3",
+        url="https://example.com/controller.bin",
+        md5="0" * 32,
+        sku=firmware_module.ROVER_30_SKU,
+    )
+    session = _FakeDownloadSession(_FakeDownloadResponse([b"123", b"45"]))
+
+    with pytest.raises(
+        firmware_module.RenogyFirmwareError, match="exceeds the safety limit"
+    ):
+        await firmware_module.RenogyFirmwareClient(session).async_download(release)
 
 
 class _FakeBleakClient:
