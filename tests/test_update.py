@@ -127,7 +127,7 @@ def _load_update_module() -> Any:
     class RenogyFirmwareRelease:
         version: str
         url: str
-        md5: str
+        md5: str | None
         sku: str
 
     class RenogyFirmwareAuthStore:
@@ -149,6 +149,14 @@ def _load_update_module() -> Any:
     firmware.RenogyFirmwareAuthStore = RenogyFirmwareAuthStore
     firmware.RenogyFirmwareClient = RenogyFirmwareClient
     firmware.firmware_identity_uuid = lambda entry_id: f"identity-{entry_id}"
+    firmware.normalized_firmware_version = lambda version: (
+        (version or "").strip().lower().removeprefix("v")
+    )
+    firmware.parsed_firmware_version = lambda version: (
+        tuple(int(part) for part in str(version).removeprefix("V").split("."))
+        if version
+        else None
+    )
     sys.modules["custom_components.renogy.firmware"] = firmware
 
     name = "custom_components.renogy.update"
@@ -237,3 +245,105 @@ def test_firmware_update_entity_rejects_duplicate_install() -> None:
 
     with pytest.raises(module.HomeAssistantError, match="already in progress"):
         asyncio.run(entity.async_install(None, False))
+
+
+def test_firmware_versions_use_consistent_display_prefix() -> None:
+    """Catalog versions use the same V prefix as the controller register."""
+    module = _load_update_module()
+    manager = _manager(module)
+    manager.release = module.RenogyFirmwareRelease(
+        "2.0.1",
+        "https://example.com/RVR30.bin",
+        None,
+        module.ROVER_30_SKU,
+    )
+
+    entity = module.RenogyControllerFirmwareUpdate(manager)
+
+    assert entity.latest_version == "V2.0.1"
+
+
+def test_firmware_update_rejects_downgrade_before_network_or_ble() -> None:
+    """An older or equal catalog release can never reach the controller."""
+    module = _load_update_module()
+    manager = _manager(module)
+    manager.coordinator.data["sw_version"] = "V2.0.1"
+    manager.coordinator.firmware_update_in_progress = False
+    manager.coordinator.async_install_firmware = AsyncMock()
+    manager.release = module.RenogyFirmwareRelease(
+        "2.0.0",
+        "https://example.com/RVR30.bin",
+        None,
+        module.ROVER_30_SKU,
+    )
+    manager.async_refresh = AsyncMock()
+    entity = module.RenogyControllerFirmwareUpdate(manager)
+
+    with pytest.raises(module.HomeAssistantError, match="downgrade or reinstall"):
+        asyncio.run(entity.async_install("V2.0.0", False))
+
+    manager.async_refresh.assert_not_awaited()
+    manager.coordinator.async_install_firmware.assert_not_awaited()
+
+
+def test_firmware_update_revalidates_catalog_before_ble_transfer() -> None:
+    """The selected release is fetched again before any controller write."""
+    module = _load_update_module()
+    manager = _manager(module)
+    manager.coordinator.data["sw_version"] = "V2.0.0"
+    manager.coordinator.firmware_update_in_progress = False
+    manager.coordinator.async_install_firmware = AsyncMock()
+    manager.release = module.RenogyFirmwareRelease(
+        "2.0.1",
+        "https://example.com/RVR30.bin",
+        None,
+        module.ROVER_30_SKU,
+    )
+    manager.catalog_checked = True
+    manager.last_error = None
+    manager.async_refresh = AsyncMock()
+    manager.client.async_download = AsyncMock(return_value=b"verified firmware")
+    entity = module.RenogyControllerFirmwareUpdate(manager)
+    entity._async_verify_installed_version = AsyncMock()
+
+    asyncio.run(entity.async_install("V2.0.1", False))
+
+    manager.async_refresh.assert_awaited_once()
+    manager.client.async_download.assert_awaited_once_with(manager.release)
+    manager.coordinator.async_install_firmware.assert_awaited_once()
+    entity._async_verify_installed_version.assert_awaited_once_with("2.0.1")
+
+
+def test_firmware_update_rejects_catalog_change_before_ble_transfer() -> None:
+    """A changed URL or version requires the user to review the new offer."""
+    module = _load_update_module()
+    manager = _manager(module)
+    manager.coordinator.data["sw_version"] = "V2.0.0"
+    manager.coordinator.firmware_update_in_progress = False
+    manager.coordinator.async_install_firmware = AsyncMock()
+    manager.release = module.RenogyFirmwareRelease(
+        "2.0.1",
+        "https://example.com/original.bin",
+        None,
+        module.ROVER_30_SKU,
+    )
+    manager.catalog_checked = True
+    manager.last_error = None
+
+    async def _change_release() -> None:
+        manager.release = module.RenogyFirmwareRelease(
+            "2.0.1",
+            "https://example.com/changed.bin",
+            None,
+            module.ROVER_30_SKU,
+        )
+
+    manager.async_refresh = AsyncMock(side_effect=_change_release)
+    manager.client.async_download = AsyncMock()
+    entity = module.RenogyControllerFirmwareUpdate(manager)
+
+    with pytest.raises(module.HomeAssistantError, match="offer changed"):
+        asyncio.run(entity.async_install("V2.0.1", False))
+
+    manager.client.async_download.assert_not_awaited()
+    manager.coordinator.async_install_firmware.assert_not_awaited()

@@ -32,6 +32,8 @@ from .firmware import (
     RenogyFirmwareError,
     RenogyFirmwareRelease,
     firmware_identity_uuid,
+    normalized_firmware_version,
+    parsed_firmware_version,
 )
 
 FIRMWARE_CHECK_INTERVAL = timedelta(hours=12)
@@ -157,7 +159,7 @@ class RenogyFirmwareManager:
         """Restrict OTA to the exact controller family proven from Renogy's app."""
         data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
         model = str(data.get("model") or "").upper().replace(" ", "")
-        if model and (model == ROVER_30_SKU or "RVR30" in model):
+        if model == ROVER_30_SKU:
             return ROVER_30_SKU
         return None
 
@@ -252,16 +254,28 @@ class RenogyControllerFirmwareUpdate(UpdateEntity):
     @property
     def latest_version(self) -> str | None:
         """Return the version currently offered by Renogy."""
-        return self.manager.release.version if self.manager.release else None
+        if self.manager.release is None:
+            return None
+        return f"V{normalized_firmware_version(self.manager.release.version)}"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose catalog status without leaking account credentials."""
+        release = self.manager.release
         return {
             "firmware_sku": ROVER_30_SKU,
             "catalog_configured": self.manager.client.auth is not None,
             "catalog_checked": self.manager.catalog_checked,
             "catalog_error": self.manager.last_error,
+            "integrity_check": (
+                None
+                if release is None
+                else (
+                    "Renogy MD5"
+                    if release.md5 is not None
+                    else "Two matching HTTPS downloads"
+                )
+            ),
         }
 
     async def async_added_to_hass(self) -> None:
@@ -294,11 +308,41 @@ class RenogyControllerFirmwareUpdate(UpdateEntity):
         if self._attr_in_progress or self.coordinator.firmware_update_in_progress:
             raise HomeAssistantError("A Renogy firmware update is already in progress")
 
-        release = self.manager.release
-        if release is None:
+        displayed_release = self.manager.release
+        if displayed_release is None:
             raise HomeAssistantError("No Renogy firmware release is available")
-        if version is not None and version != release.version:
+        if self.manager._controller_sku() != ROVER_30_SKU:
+            raise HomeAssistantError("Controller is not an exact Rover 30 match")
+        if version is not None and self._normalized_version(
+            version
+        ) != self._normalized_version(displayed_release.version):
             raise HomeAssistantError("Renogy did not offer the requested version")
+
+        installed = parsed_firmware_version(self.installed_version)
+        offered = parsed_firmware_version(displayed_release.version)
+        if installed is None or offered is None:
+            raise HomeAssistantError(
+                "Controller firmware version could not be verified"
+            )
+        if offered <= installed:
+            raise HomeAssistantError("Firmware downgrade or reinstall is not allowed")
+
+        await self.manager.async_refresh()
+        release = self.manager.release
+        if (
+            not self.manager.catalog_checked
+            or self.manager.last_error is not None
+            or release is None
+        ):
+            raise HomeAssistantError(
+                "Renogy's firmware catalog could not be revalidated"
+            )
+        if release != displayed_release:
+            raise HomeAssistantError(
+                "Renogy's firmware offer changed; review the update again"
+            )
+        if release.sku != ROVER_30_SKU:
+            raise HomeAssistantError("Firmware is not for the exact Rover 30 SKU")
 
         self._attr_in_progress = True
         self._attr_update_percentage = 0
@@ -338,4 +382,4 @@ class RenogyControllerFirmwareUpdate(UpdateEntity):
     @staticmethod
     def _normalized_version(version: str | None) -> str:
         """Normalize Renogy's optional leading V for exact verification."""
-        return (version or "").strip().lower().removeprefix("v")
+        return normalized_firmware_version(version)

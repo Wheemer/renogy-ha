@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
+import ipaddress
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -29,9 +32,11 @@ RENOGY_WRITE_CHAR_UUID = "0000ffd1-0000-1000-8000-00805f9b34fb"
 OTA_BLOCK_SIZE = 128
 OTA_PACKET_SIZE = OTA_BLOCK_SIZE + 4
 OTA_PAD_BYTE = 0xAA
+RENOGY_ANDROID_REQUESTED_MTU = 251
 OTA_COMMAND_TIMEOUT = 5.0
 OTA_FINAL_TIMEOUT = 30.0
 OTA_MAX_FIRMWARE_BYTES = 8 * 1024 * 1024
+FIRMWARE_VERSION_PATTERN = re.compile(r"^[vV]?(\d+)\.(\d+)\.(\d+)$")
 
 
 class RenogyFirmwareError(Exception):
@@ -44,6 +49,10 @@ class RenogyFirmwareAuthError(RenogyFirmwareError):
 
 class RenogyFirmwareProtocolError(RenogyFirmwareError):
     """The controller rejected or interrupted an OTA operation."""
+
+
+class RenogyFirmwareTimeoutError(RenogyFirmwareProtocolError):
+    """The controller did not answer an OTA command in time."""
 
 
 @dataclass(slots=True)
@@ -60,8 +69,21 @@ class RenogyFirmwareRelease:
 
     version: str
     url: str
-    md5: str
+    md5: str | None
     sku: str
+
+
+def normalized_firmware_version(version: str | None) -> str:
+    """Return Renogy's version without its optional display prefix."""
+    return (version or "").strip().lower().removeprefix("v")
+
+
+def parsed_firmware_version(version: str | None) -> tuple[int, int, int] | None:
+    """Parse the exact three-part controller version format."""
+    match = FIRMWARE_VERSION_PATTERN.fullmatch((version or "").strip())
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups())
 
 
 class RenogyFirmwareAuthStore:
@@ -169,9 +191,14 @@ class RenogyFirmwareClient:
 
         version = str(release.get("firmwareVersion") or "").strip()
         url = str(release.get("fileUrl") or "").strip()
-        md5 = str(release.get("fileMd5") or "").strip().lower()
-        release_sku = str(release.get("venderSku") or sku).strip()
-        if not version or not url or len(md5) != 32:
+        md5 = str(release.get("fileMd5") or "").strip().lower() or None
+        release_sku = str(release.get("venderSku") or "").strip().upper()
+        if (
+            parsed_firmware_version(version) is None
+            or not url
+            or release_sku != sku.upper()
+            or (md5 is not None and re.fullmatch(r"[0-9a-f]{32}", md5) is None)
+        ):
             raise RenogyFirmwareError("Renogy returned an incomplete firmware record")
         self._validate_download_url(url)
         return RenogyFirmwareRelease(version, url, md5, release_sku)
@@ -179,9 +206,37 @@ class RenogyFirmwareClient:
     async def async_download(self, release: RenogyFirmwareRelease) -> bytes:
         """Download and verify a firmware image."""
         self._validate_download_url(release.url)
+        firmware = await self._async_download_once(release.url)
+
+        if release.md5 is not None:
+            digest = hashlib.md5(firmware, usedforsecurity=False).hexdigest()
+            if not hmac.compare_digest(digest.lower(), release.md5.lower()):
+                raise RenogyFirmwareError(
+                    "Firmware MD5 does not match Renogy's catalog"
+                )
+            self._validate_firmware_image(firmware, release)
+            return firmware
+
+        # Renogy's live Rover catalog currently omits fileMd5, and its Android
+        # BLE OTA path does not consume that field. Fetch twice over separate
+        # HTTPS requests and require identical bytes before allowing a flash.
+        confirmation = await self._async_download_once(release.url)
+        first_sha256 = hashlib.sha256(firmware).digest()
+        second_sha256 = hashlib.sha256(confirmation).digest()
+        if not hmac.compare_digest(first_sha256, second_sha256):
+            raise RenogyFirmwareError(
+                "Repeated firmware downloads did not match; refusing to install"
+            )
+        self._validate_firmware_image(firmware, release)
+        return firmware
+
+    async def _async_download_once(self, url: str) -> bytes:
+        """Download one bounded firmware image over a validated HTTPS path."""
         try:
-            async with self._session.get(release.url) as response:
-                if response.status >= 400:
+            async with self._session.get(url) as response:
+                final_url = str(getattr(response, "url", url))
+                self._validate_download_url(final_url)
+                if not 200 <= response.status < 300:
                     raise RenogyFirmwareError(
                         f"Firmware download failed with HTTP {response.status}"
                     )
@@ -204,9 +259,6 @@ class RenogyFirmwareClient:
 
         if not firmware or len(firmware) > OTA_MAX_FIRMWARE_BYTES:
             raise RenogyFirmwareError("Firmware image is empty or too large")
-        digest = hashlib.md5(firmware, usedforsecurity=False).hexdigest()
-        if digest.lower() != release.md5.lower():
-            raise RenogyFirmwareError("Firmware MD5 does not match Renogy's catalog")
         return firmware
 
     async def _async_catalog_request(self, sku: str, type_id: int) -> ClientResponse:
@@ -304,8 +356,38 @@ class RenogyFirmwareClient:
     @staticmethod
     def _validate_download_url(url: str) -> None:
         parsed = urlparse(url)
-        if parsed.scheme != "https" or not parsed.hostname:
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+            or not parsed.path.lower().endswith(".bin")
+        ):
             raise RenogyFirmwareError("Renogy returned an unsafe firmware URL")
+        try:
+            address = ipaddress.ip_address(parsed.hostname)
+        except ValueError:
+            return
+        if not address.is_global:
+            raise RenogyFirmwareError("Renogy returned an unsafe firmware URL")
+
+    @staticmethod
+    def _validate_firmware_image(
+        firmware: bytes, release: RenogyFirmwareRelease
+    ) -> None:
+        """Validate the Rover image header recovered from Renogy's catalog file."""
+        if len(firmware) < 128:
+            raise RenogyFirmwareError("Firmware image is too small for a Rover image")
+        declared_size = int.from_bytes(firmware[:4], "little")
+        if declared_size != len(firmware):
+            raise RenogyFirmwareError(
+                "Firmware image length does not match its Rover header"
+            )
+        if release.sku.encode("ascii") not in firmware[:128]:
+            raise RenogyFirmwareError(
+                "Firmware image header is not for the expected Rover SKU"
+            )
 
 
 def firmware_identity_uuid(entry_id: str) -> str:
@@ -345,9 +427,16 @@ def build_ota_packet(sequence: int, block: bytes) -> bytes:
 class RenogyOtaProtocol:
     """Run the Rover OTA protocol over an already connected Bleak client."""
 
-    def __init__(self, client: BleakClient) -> None:
+    def __init__(
+        self, client: BleakClient, controller_address: int | None = None
+    ) -> None:
         """Initialize the OTA transport."""
         self._client = client
+        self._controller_address = (
+            controller_address
+            if controller_address is not None and 1 <= controller_address <= 247
+            else None
+        )
         self._responses: asyncio.Queue[bytes] = asyncio.Queue()
 
     async def async_update(
@@ -362,17 +451,14 @@ class RenogyOtaProtocol:
             firmware[offset : offset + OTA_BLOCK_SIZE]
             for offset in range(0, len(firmware), OTA_BLOCK_SIZE)
         ]
+        await self._ensure_packet_mtu()
         await self._client.start_notify(
             RENOGY_READ_CHAR_UUID, self._notification_handler
         )
         try:
-            await self._ensure_packet_mtu()
-            await self._write(build_bootloader_command())
-            await asyncio.sleep(5)
-
-            await self._command_expect_any(b"info")
-            response = await self._command(b"updata")
-            if b"\x15" not in response:
+            used_addressed_boot = await self._enter_bootloader()
+            response = await self._command_with_timeout_retries(b"updata", attempts=3)
+            if response != b"\x15":
                 raise RenogyFirmwareProtocolError(
                     f"Controller rejected OTA start: {response.hex()}"
                 )
@@ -380,13 +466,8 @@ class RenogyOtaProtocol:
 
             for index, block in enumerate(blocks, start=1):
                 packet = build_ota_packet(index, block)
-                acknowledged = False
-                for _attempt in range(3):
-                    response = await self._command(packet)
-                    if b"\x06" in response:
-                        acknowledged = True
-                        break
-                if not acknowledged:
+                response = await self._command_with_timeout_retries(packet, attempts=3)
+                if response != b"\x06":
                     raise RenogyFirmwareProtocolError(
                         f"Controller did not acknowledge firmware block {index}"
                     )
@@ -394,9 +475,13 @@ class RenogyOtaProtocol:
                     progress_callback(index * 100 / len(blocks))
 
             await asyncio.sleep(0.05)
-            self._drain_responses()
-            await self._write(b"\x04")
-            await self._wait_for_update_ok()
+            response = await self._command_with_timeout_retries(b"\x04", attempts=3)
+            if not response:
+                raise RenogyFirmwareProtocolError(
+                    "Controller did not acknowledge firmware completion"
+                )
+            if used_addressed_boot:
+                await self._wait_for_update_ok()
         finally:
             try:
                 await self._client.stop_notify(RENOGY_READ_CHAR_UUID)
@@ -418,16 +503,45 @@ class RenogyOtaProtocol:
                 self._responses.get(), timeout=OTA_COMMAND_TIMEOUT
             )
         except TimeoutError as err:
-            raise RenogyFirmwareProtocolError(
+            raise RenogyFirmwareTimeoutError(
                 f"Controller timed out after command {data[:8].hex()}"
             ) from err
 
-    async def _command_expect_any(self, data: bytes) -> None:
-        response = await self._command(data)
+    async def _enter_bootloader(self) -> bool:
+        """Enter OTA mode using Renogy's broadcast then addressed fallback."""
+        await self._write(build_bootloader_command())
+        await asyncio.sleep(5)
+        try:
+            await self._command_expect_any(b"info", attempts=3)
+            return False
+        except RenogyFirmwareTimeoutError:
+            if self._controller_address is None:
+                raise
+
+        await self._write(build_bootloader_command(self._controller_address))
+        await asyncio.sleep(5)
+        await self._command_expect_any(b"info", attempts=1)
+        return True
+
+    async def _command_with_timeout_retries(
+        self, data: bytes, *, attempts: int
+    ) -> bytes:
+        """Retry only command timeouts, matching Renogy's Android updater."""
+        for attempt in range(1, attempts + 1):
+            try:
+                return await self._command(data)
+            except RenogyFirmwareTimeoutError:
+                if attempt == attempts:
+                    raise
+        raise AssertionError("unreachable")
+
+    async def _command_expect_any(self, data: bytes, *, attempts: int) -> None:
+        response = await self._command_with_timeout_retries(data, attempts=attempts)
         if not response:
             raise RenogyFirmwareProtocolError("Controller did not enter OTA mode")
 
     async def _wait_for_update_ok(self) -> None:
+        """Wait for the extra completion message used by the addressed fallback."""
         deadline = asyncio.get_running_loop().time() + OTA_FINAL_TIMEOUT
         received = b""
         while asyncio.get_running_loop().time() < deadline:
@@ -435,19 +549,19 @@ class RenogyOtaProtocol:
             try:
                 received += await asyncio.wait_for(self._responses.get(), timeout)
             except TimeoutError as err:
-                raise RenogyFirmwareProtocolError(
+                raise RenogyFirmwareTimeoutError(
                     "Controller did not confirm UPDATE_OK"
                 ) from err
             if b"UPDATE_OK" in received:
                 return
-        raise RenogyFirmwareProtocolError("Controller did not confirm UPDATE_OK")
+        raise RenogyFirmwareTimeoutError("Controller did not confirm UPDATE_OK")
 
     def _drain_responses(self) -> None:
         while not self._responses.empty():
             self._responses.get_nowait()
 
     async def _ensure_packet_mtu(self) -> None:
-        """Ask BlueZ for an MTU large enough for the app's 132-byte frame."""
+        """Confirm the negotiated connection can carry the app's 132-byte frame."""
         characteristic = self._client.services.get_characteristic(
             RENOGY_WRITE_CHAR_UUID
         )
@@ -455,15 +569,24 @@ class RenogyOtaProtocol:
             raise RenogyFirmwareProtocolError(
                 "Renogy OTA write characteristic is missing"
             )
-        if characteristic.max_write_without_response_size >= OTA_PACKET_SIZE:
+        characteristic_size = characteristic.max_write_without_response_size
+        if characteristic_size >= OTA_PACKET_SIZE:
             return
 
+        negotiated_size = 0
         acquire_mtu = getattr(
             getattr(self._client, "_backend", None), "_acquire_mtu", None
         )
         if callable(acquire_mtu):
             await acquire_mtu()
-        if characteristic.max_write_without_response_size < OTA_PACKET_SIZE:
+            mtu_size = getattr(self._client, "mtu_size", 0)
+            if isinstance(mtu_size, int):
+                negotiated_size = max(0, mtu_size - 3)
+
+        characteristic_size = characteristic.max_write_without_response_size
+        if max(characteristic_size, negotiated_size) < OTA_PACKET_SIZE:
             raise RenogyFirmwareProtocolError(
-                "Bluetooth path did not negotiate the 132-byte OTA packet size"
+                "Bluetooth path cannot carry Renogy's 132-byte OTA packet "
+                f"(characteristic={characteristic_size}, negotiated={negotiated_size}, "
+                f"Android requests MTU {RENOGY_ANDROID_REQUESTED_MTU})"
             )

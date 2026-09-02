@@ -617,7 +617,14 @@ class RenogyActiveBluetoothCoordinator(
                         device_name,
                         max_attempts=3,
                     )
-                    await RenogyOtaProtocol(ota_client).async_update(
+                    controller_address = None
+                    if isinstance(self.data, dict):
+                        raw_address = self.data.get("device_id")
+                        if isinstance(raw_address, int):
+                            controller_address = raw_address
+                    await RenogyOtaProtocol(
+                        ota_client, controller_address=controller_address
+                    ).async_update(
                         firmware, progress_callback
                     )
                 except RenogyFirmwareError:
@@ -630,7 +637,7 @@ class RenogyActiveBluetoothCoordinator(
                     if ota_client is not None and ota_client.is_connected:
                         try:
                             await asyncio.wait_for(ota_client.disconnect(), timeout=5)
-                        except BleakError, TimeoutError:
+                        except (BleakError, TimeoutError):
                             self.logger.debug(
                                 "Could not cleanly disconnect firmware client for %s",
                                 self.address,
