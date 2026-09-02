@@ -370,8 +370,12 @@ def test_read_device_data_handles_ble_errors():
         rssi=-60,
     )
 
-    coordinator._ble_client.read_device = AsyncMock(
+    failing_client = coordinator._ble_client
+    failing_client.read_device = AsyncMock(
         side_effect=ble_module.BleakError("read failed")
+    )
+    coordinator._build_ble_client_for_type = MagicMock(
+        return_value=failing_client
     )
 
     success = asyncio.run(coordinator._read_device_data(service_info))
@@ -401,8 +405,12 @@ def test_read_failures_respect_configured_availability_grace():
         name="BT-TH-12345",
         rssi=-60,
     )
-    coordinator._ble_client.read_device = AsyncMock(
+    failing_client = coordinator._ble_client
+    failing_client.read_device = AsyncMock(
         side_effect=ble_module.BleakError("read failed")
+    )
+    coordinator._build_ble_client_for_type = MagicMock(
+        return_value=failing_client
     )
 
     assert asyncio.run(coordinator._read_device_data(service_info)) is False
@@ -475,6 +483,75 @@ def test_update_device_applies_configured_grace_and_reconnect_interval():
 
     assert device.max_failures == 5
     assert device.unavailable_retry_interval == 2
+
+
+def test_controller_static_commands_are_throttled_to_120_seconds():
+    """Controller live telemetry stays fast while static reads are slower."""
+    ble_module = _load_ble_module()
+    ble_module.renogy_ble_module.COMMANDS = {
+        "controller": {
+            "device_info": (3, 12, 8),
+            "device_id": (3, 26, 1),
+            "battery": (3, 57348, 1),
+            "pv": (3, 256, 34),
+        }
+    }
+    coordinator = ble_module.RenogyActiveBluetoothCoordinator(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        address="AA:BB:CC:DD:EE:FF",
+        scan_interval=15,
+        device_type="controller",
+    )
+    coordinator.data = {"battery_voltage": 13.2}
+    coordinator._last_controller_static_attempt = 100.0
+
+    with patch.object(ble_module.time, "monotonic", return_value=219.9):
+        commands, static_due = coordinator._controller_commands_for_poll()
+
+    assert static_due is False
+    assert list(commands) == ["pv"]
+    assert coordinator.scan_interval == 15
+
+    with patch.object(ble_module.time, "monotonic", return_value=220.0):
+        commands, static_due = coordinator._controller_commands_for_poll()
+
+    assert static_due is True
+    assert list(commands) == [
+        "pv",
+        "device_info",
+        "device_id",
+        "battery",
+        "controller_identity",
+    ]
+    assert commands["controller_identity"] == (3, 0x0014, 6)
+
+
+def test_controller_identity_response_parses_versions_and_serial_number():
+    """The integration reads the Rover identity block omitted by renogy-ble."""
+    ble_module = _load_ble_module()
+    payload = bytes.fromhex("000100040002000301117320")
+    frame_without_crc = bytes((1, 3, len(payload))) + payload
+    crc_low, crc_high = ble_module._modbus_crc(frame_without_crc)
+
+    parsed = ble_module._parse_controller_identity_response(
+        frame_without_crc + bytes((crc_low, crc_high))
+    )
+
+    assert parsed == {
+        "sw_version": "V1.0.4",
+        "hw_version": "V2.0.3",
+        "serial_number": "17920800",
+    }
+
+
+def test_controller_identity_response_rejects_bad_crc():
+    """Corrupt identity frames must never become diagnostic values."""
+    ble_module = _load_ble_module()
+    payload = bytes.fromhex("000100040002000301117320")
+    corrupt_frame = bytes((1, 3, len(payload))) + payload + b"\x00\x00"
+
+    assert ble_module._parse_controller_identity_response(corrupt_frame) is None
 
 
 def test_poll_skips_connection_during_unavailable_retry_cooldown():

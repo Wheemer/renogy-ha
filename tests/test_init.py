@@ -253,6 +253,33 @@ def test_async_setup_entry_defaults_grace_and_reconnect_when_unset() -> None:
     )
 
 
+def test_async_setup_entry_defaults_controller_scan_interval_to_15() -> None:
+    """Controller entries poll live telemetry every 15s when unset."""
+    init_module, coordinator_class = _load_init_module()
+    hass = MagicMock()
+    hass.data = {}
+    hass.config_entries.async_forward_entry_setups = AsyncMock()
+    hass.async_create_task = lambda coro: asyncio.get_running_loop().create_task(coro)
+
+    entry = MagicMock()
+    entry.entry_id = "entry-1"
+    entry.data = {
+        "address": "AA:BB:CC:DD:EE:FF",
+        init_module.CONF_DEVICE_TYPE: init_module.DeviceType.CONTROLLER.value,
+    }
+    entry.options = {}
+    entry.add_update_listener = MagicMock(return_value=lambda: None)
+    entry.async_on_unload = MagicMock()
+
+    result = asyncio.run(init_module.async_setup_entry(hass, entry))
+
+    assert result is True
+    assert (
+        coordinator_class.last_init["scan_interval"]
+        == init_module.DEFAULT_CONTROLLER_SCAN_INTERVAL
+    )
+
+
 def test_reload_listener_reloads_entry() -> None:
     """Ensure option updates trigger a config-entry reload."""
     init_module, _ = _load_init_module()

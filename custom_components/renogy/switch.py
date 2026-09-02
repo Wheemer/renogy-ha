@@ -11,19 +11,18 @@ from homeassistant.components.bluetooth.passive_update_coordinator import (
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .availability import is_entity_available
 from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
 from .const import (
-    ATTR_MANUFACTURER,
     CONF_DEVICE_TYPE,
     DEFAULT_DEVICE_TYPE,
     DOMAIN,
     LOGGER,
     DeviceType,
 )
+from .device_info import build_device_info
 from .device_name import is_device_name_ready
 
 KEY_LOAD_STATUS = "load_status"
@@ -100,26 +99,21 @@ class RenogyLoadSwitch(PassiveBluetoothCoordinatorEntity, SwitchEntity):
         if device:
             self._attr_unique_id = f"{device.address}_{self.entity_description.key}"
             self._attr_name = cast("str | None", self.entity_description.name)
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, device.address)},
+            self._attr_device_info = build_device_info(
+                address=device.address,
                 name=device.name,
-                manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {device.address}",
-                sw_version=device_type.capitalize(),
+                device=device,
             )
         else:
             self._attr_unique_id = (
                 f"{coordinator.address}_{self.entity_description.key}"
             )
             self._attr_name = cast("str | None", self.entity_description.name)
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, coordinator.address)},
+            self._attr_device_info = build_device_info(
+                address=coordinator.address,
                 name=f"Renogy {device_type.capitalize()}",
-                manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {coordinator.address}",
-                sw_version=device_type.capitalize(),
             )
 
     @property
@@ -137,13 +131,11 @@ class RenogyLoadSwitch(PassiveBluetoothCoordinatorEntity, SwitchEntity):
 
         self._attr_unique_id = f"{device.address}_{self.entity_description.key}"
         self._attr_name = cast("str | None", self.entity_description.name)
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device.address)},
+        self._attr_device_info = build_device_info(
+            address=device.address,
             name=device.name,
-            manufacturer=ATTR_MANUFACTURER,
             model=device_model,
-            hw_version=f"BLE Address: {device.address}",
-            sw_version=self._device_type.capitalize(),
+            device=device,
         )
 
     @property

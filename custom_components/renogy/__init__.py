@@ -19,6 +19,7 @@ from .const import (
     CONF_SHUNT_CONNECTION_MODE,
     CONF_UNAVAILABLE_RETRY_INTERVAL,
     DEFAULT_COMMUNICATION_HUB_ENABLED,
+    DEFAULT_CONTROLLER_SCAN_INTERVAL,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_MAX_FAILURES,
     DEFAULT_NON_SHUNT_CONNECTION_MODE,
@@ -53,13 +54,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Get configuration from entry. Runtime knobs resolve options → data →
     # default so that edits made in the options flow take effect on reload.
-    scan_interval = _resolve_setting(entry, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    device_type = entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
+    scan_default = (
+        DEFAULT_CONTROLLER_SCAN_INTERVAL
+        if device_type == DeviceType.CONTROLLER.value
+        else DEFAULT_SCAN_INTERVAL
+    )
+    scan_interval = _resolve_setting(entry, CONF_SCAN_INTERVAL, scan_default)
     max_failures = _resolve_setting(entry, CONF_MAX_FAILURES, DEFAULT_MAX_FAILURES)
     unavailable_retry_interval = _resolve_setting(
         entry, CONF_UNAVAILABLE_RETRY_INTERVAL, DEFAULT_UNAVAILABLE_RETRY_INTERVAL
     )
     device_address = entry.data.get(CONF_ADDRESS)
-    device_type = entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
     shunt_connection_mode = _get_shunt_connection_mode(entry)
     non_shunt_connection_mode = _get_non_shunt_connection_mode(entry)
     communication_hub_enabled = _get_communication_hub_enabled(entry)
@@ -230,6 +236,15 @@ async def update_device_registry(
             if device.parsed_data
             else device.device_type.capitalize()
         )
+        sw_version = (
+            device.parsed_data.get("sw_version") if device.parsed_data else None
+        )
+        hw_version = (
+            device.parsed_data.get("hw_version") if device.parsed_data else None
+        )
+        serial_number = (
+            device.parsed_data.get("serial_number") if device.parsed_data else None
+        )
 
         # Find the device in the registry using the domain and device address
         device_entry = device_registry.async_get_device({(DOMAIN, device.address)})
@@ -239,9 +254,21 @@ async def update_device_registry(
             LOGGER.debug(
                 "Updating device registry entry with real name: %s", device.name
             )
-            device_registry.async_update_device(
-                device_entry.id, name=device.name, model=model
-            )
+            if sw_version and hw_version and serial_number:
+                device_registry.async_update_device(
+                    device_entry.id,
+                    name=device.name,
+                    model=model,
+                    sw_version=str(sw_version),
+                    hw_version=str(hw_version),
+                    serial_number=str(serial_number),
+                )
+            else:
+                device_registry.async_update_device(
+                    device_entry.id,
+                    name=device.name,
+                    model=model,
+                )
         else:
             LOGGER.debug("Device %s not found in registry for update", device.address)
     except Exception as e:
