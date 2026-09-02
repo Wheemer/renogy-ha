@@ -9,6 +9,7 @@ LOGGER = logging.getLogger(__name__)
 
 # BLE scanning constants
 DEFAULT_SCAN_INTERVAL = 60  # seconds
+DEFAULT_CONTROLLER_SCAN_INTERVAL = 15  # seconds
 MIN_SCAN_INTERVAL = 10  # seconds
 MAX_SCAN_INTERVAL = 600  # seconds
 

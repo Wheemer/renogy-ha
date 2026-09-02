@@ -465,6 +465,24 @@ def test_reconfigure_form_defaults_to_options_scan_interval() -> None:
     assert _schema_default(form_result["data_schema"], "scan_interval") == 45
 
 
+def test_reconfigure_form_defaults_controller_scan_interval_to_15() -> None:
+    """Controller entries without a saved interval should show the fast default."""
+    config_flow_module = _load_config_flow_module()
+    const_module = importlib.import_module("custom_components.renogy.const")
+    flow, _entry = _make_reconfigure_flow(
+        config_flow_module,
+        const_module,
+        data={const_module.CONF_DEVICE_TYPE: const_module.DeviceType.CONTROLLER.value},
+    )
+
+    form_result = asyncio.run(flow.async_step_reconfigure())
+
+    assert (
+        _schema_default(form_result["data_schema"], "scan_interval")
+        == const_module.DEFAULT_CONTROLLER_SCAN_INTERVAL
+    )
+
+
 def test_reconfigure_form_suggests_dcc_from_reported_model() -> None:
     """A DCC model reported by the coordinator should preselect the DCC type."""
     config_flow_module = _load_config_flow_module()

@@ -96,10 +96,82 @@ SHUNT_RECONNECT_DELAY_SECONDS = 10
 SHUNT_FORCE_UPDATE_INTERVAL_SECONDS = 300
 SHUNT_DISCONNECT_TIMEOUT_SECONDS = 5.0
 SHUNT_STARTUP_READY_TIMEOUT_SECONDS = 30.0
-CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS = 60
+BLE_FAILURE_CACHE_CLEAR_TIMEOUT_SECONDS = 5.0
+# The controller "pv" command carries the live telemetry used by HA control.
+# Keep separate identity/config commands slower to reduce BLE/GATT load.
+CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS = 120
 CONTROLLER_LIVE_COMMAND_NAMES = ("pv",)
 CONTROLLER_STATIC_COMMAND_NAMES = ("device_info", "device_id", "battery")
-CONTROLLER_STATIC_RESULT_KEYS = ("model", "device_id", "battery_type")
+CONTROLLER_IDENTITY_COMMAND_NAME = "controller_identity"
+CONTROLLER_IDENTITY_COMMAND = (3, 0x0014, 6)
+CONTROLLER_IDENTITY_START_REGISTER = 0x0014
+CONTROLLER_IDENTITY_WORD_COUNT = 6
+CONTROLLER_STATIC_RESULT_KEYS = (
+    "model",
+    "device_id",
+    "battery_type",
+    "sw_version",
+    "hw_version",
+    "serial_number",
+)
+
+
+def _modbus_crc(data: bytes | bytearray) -> tuple[int, int]:
+    """Calculate the Modbus CRC16 bytes in wire order."""
+    crc = 0xFFFF
+    for value in data:
+        crc ^= value
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
+    return crc & 0xFF, (crc >> 8) & 0xFF
+
+
+def _parse_controller_identity_response(raw_data: bytes) -> dict[str, Any] | None:
+    """Parse the Rover software, hardware, and serial register block."""
+    if len(raw_data) < 5 or raw_data[1] != 3:
+        return None
+
+    byte_count = raw_data[2]
+    expected_byte_count = CONTROLLER_IDENTITY_WORD_COUNT * 2
+    frame_length = 3 + byte_count + 2
+    if byte_count != expected_byte_count or len(raw_data) < frame_length:
+        return None
+
+    crc_low, crc_high = _modbus_crc(raw_data[: 3 + byte_count])
+    if raw_data[3 + byte_count : frame_length] != bytes((crc_low, crc_high)):
+        return None
+
+    payload = raw_data[3 : 3 + byte_count]
+    words = [
+        int.from_bytes(payload[offset : offset + 2], "big")
+        for offset in range(0, len(payload), 2)
+    ]
+    return {
+        "sw_version": f"V{words[0] & 0xFF}.{words[1] >> 8}.{words[1] & 0xFF}",
+        "hw_version": f"V{words[2] & 0xFF}.{words[3] >> 8}.{words[3] & 0xFF}",
+        "serial_number": str(int.from_bytes(payload[8:12], "big")),
+    }
+
+
+class RenogyIntegrationBLEDevice(RenogyBLEDevice):
+    """Renogy device with parsing for controller identity diagnostics."""
+
+    def update_parsed_data(
+        self, raw_data: bytes, register: int, cmd_name: str = "unknown"
+    ) -> bool:
+        """Parse integration-owned diagnostics or defer to renogy-ble."""
+        if (
+            self.device_type == DeviceType.CONTROLLER.value
+            and register == CONTROLLER_IDENTITY_START_REGISTER
+            and cmd_name == CONTROLLER_IDENTITY_COMMAND_NAME
+        ):
+            parsed = _parse_controller_identity_response(raw_data)
+            if parsed is None:
+                return False
+            self.parsed_data.update(parsed)
+            return True
+
+        return super().update_parsed_data(raw_data, register, cmd_name)
 
 
 class RenogyActiveBluetoothCoordinator(
@@ -247,6 +319,8 @@ class RenogyActiveBluetoothCoordinator(
             for name in command_names
             if name in controller_commands
         }
+        if static_due:
+            commands[CONTROLLER_IDENTITY_COMMAND_NAME] = CONTROLLER_IDENTITY_COMMAND
         return commands or None, static_due
 
     def _controller_static_data_refreshed(self, parsed_data: dict[str, Any]) -> bool:
@@ -521,7 +595,12 @@ class RenogyActiveBluetoothCoordinator(
                 service_info.address,
                 detected_type,
             )
-            self.device = RenogyBLEDevice(
+            device_class = (
+                RenogyIntegrationBLEDevice
+                if detected_type == DeviceType.CONTROLLER.value
+                else RenogyBLEDevice
+            )
+            self.device = device_class(
                 service_info.device,
                 service_info.advertisement.rssi,
                 device_type=detected_type,
@@ -891,6 +970,41 @@ class RenogyActiveBluetoothCoordinator(
 
         return refreshed_device
 
+    async def _reset_ble_client_after_failure(self, error: Exception | None) -> None:
+        """Drop stale BlueZ/client state after an active BLE read failure."""
+        close_client = getattr(self._ble_client, "close", None)
+        if callable(close_client):
+            try:
+                await close_client()
+            except Exception as err:  # noqa: BLE001
+                self.logger.debug(
+                    "Failed to close Renogy BLE client for %s after %s: %s",
+                    self.address,
+                    error,
+                    err,
+                )
+
+        try:
+            cache_cleared = await asyncio.wait_for(
+                clear_cache(self.address),
+                timeout=BLE_FAILURE_CACHE_CLEAR_TIMEOUT_SECONDS,
+            )
+        except Exception as err:  # noqa: BLE001
+            self.logger.debug(
+                "Failed to clear Renogy BlueZ cache for %s after %s: %s",
+                self.address,
+                error,
+                err,
+            )
+        else:
+            self.logger.debug(
+                "Cleared Renogy BlueZ cache for %s after BLE read failure: %s",
+                self.address,
+                cache_cleared,
+            )
+
+        self._ble_client = self._build_ble_client_for_type(self.device_type)
+
     async def _shunt_notification_loop(self) -> None:
         """Maintain a sustained notification listener for Smart Shunt devices."""
         while True:
@@ -1026,7 +1140,9 @@ class RenogyActiveBluetoothCoordinator(
                         and isinstance(original_commands, dict)
                     ):
                         scoped_commands = dict(original_commands)
-                        scoped_commands[DeviceType.CONTROLLER.value] = controller_commands
+                        scoped_commands[DeviceType.CONTROLLER.value] = (
+                            controller_commands
+                        )
                         self._ble_client._commands = scoped_commands
                         self.logger.debug(
                             "Controller poll for %s using command subset: %s",
@@ -1057,8 +1173,12 @@ class RenogyActiveBluetoothCoordinator(
 
                 # Keep entities available until the configured failure threshold.
                 self._record_poll_availability(success, error)
-                if success and controller_static_due and self._controller_static_data_refreshed(
-                    device.parsed_data
+                if not success:
+                    await self._reset_ble_client_after_failure(error)
+                if (
+                    success
+                    and controller_static_due
+                    and self._controller_static_data_refreshed(device.parsed_data)
                 ):
                     self._last_controller_static_refresh = time.monotonic()
 

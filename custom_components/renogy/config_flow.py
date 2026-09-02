@@ -27,6 +27,7 @@ from .const import (
     CONF_SHUNT_CONNECTION_MODE,
     CONF_UNAVAILABLE_RETRY_INTERVAL,
     DEFAULT_COMMUNICATION_HUB_ENABLED,
+    DEFAULT_CONTROLLER_SCAN_INTERVAL,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_INVERTER_PROFILE,
     DEFAULT_MAX_FAILURES,
@@ -97,6 +98,13 @@ def _resolve_option(config_entry: ConfigEntry, key: str, default: Any) -> Any:
     return config_entry.options.get(key, config_entry.data.get(key, default))
 
 
+def _default_scan_interval_for_device_type(device_type: str) -> int:
+    """Return the default polling interval for a configured device type."""
+    if device_type == DeviceType.CONTROLLER.value:
+        return DEFAULT_CONTROLLER_SCAN_INTERVAL
+    return DEFAULT_SCAN_INTERVAL
+
+
 def _runtime_options_schema_dict(config_entry: ConfigEntry) -> dict[Any, Any]:
     """Build the shared runtime knobs (poll interval, grace, reconnect interval).
 
@@ -106,7 +114,11 @@ def _runtime_options_schema_dict(config_entry: ConfigEntry) -> dict[Any, Any]:
         vol.Optional(
             CONF_SCAN_INTERVAL,
             default=_resolve_option(
-                config_entry, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+                config_entry,
+                CONF_SCAN_INTERVAL,
+                _default_scan_interval_for_device_type(
+                    config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
+                ),
             ),
         ): vol.All(
             vol.Coerce(int),
@@ -416,7 +428,9 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
             self._detect_device_type_from_coordinator(entry) or current_type
         )
         current_interval = _resolve_option(
-            entry, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+            entry,
+            CONF_SCAN_INTERVAL,
+            _default_scan_interval_for_device_type(current_type),
         )
 
         reconfigure_schema = vol.Schema(

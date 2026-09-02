@@ -25,7 +25,6 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
@@ -33,7 +32,6 @@ from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from .availability import is_entity_available
 from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
 from .const import (
-    ATTR_MANUFACTURER,
     CONF_DEVICE_TYPE,
     CONF_INVERTER_PROFILE,
     DEFAULT_DEVICE_TYPE,
@@ -43,6 +41,7 @@ from .const import (
     RIV4835CSH1S_INVERTER_PROFILE,
     DeviceType,
 )
+from .device_info import build_device_info
 from .hub_sensor import setup_hub_battery_sensors
 
 # Registry of sensor keys
@@ -137,6 +136,8 @@ KEY_CELL_VOLTAGE_MAX = "cell_voltage_max"
 KEY_CELL_VOLTAGE_DELTA = "cell_voltage_delta"
 KEY_BATTERY_PROBLEM_CODE = "battery_problem_code"
 KEY_SW_VERSION = "sw_version"
+KEY_HW_VERSION = "hw_version"
+KEY_SERIAL_NUMBER = "serial_number"
 KEY_AC_INPUT_VOLTAGE = "ac_input_voltage"
 KEY_AC_INPUT_CURRENT = "ac_input_current"
 KEY_CHARGING_CURRENT = "charging_current"
@@ -1133,14 +1134,11 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
             self._attr_name = cast("str | None", description.name)
 
             # Properly set up device_info for the device registry
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, device.address)},
+            self._attr_device_info = build_device_info(
+                address=device.address,
                 name=device.name,
-                manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {device.address}",
-                sw_version=device_type.capitalize(),
-                # Add device type as software version for clarity.
+                device=device,
             )
         else:
             # If we don't have a device yet, use coordinator address for unique ID
@@ -1148,14 +1146,10 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
             self._attr_name = cast("str | None", description.name)
 
             # Set up basic device info based on coordinator
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, coordinator.address)},
+            self._attr_device_info = build_device_info(
+                address=coordinator.address,
                 name=f"Renogy {device_type.capitalize()}",
-                manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {coordinator.address}",
-                sw_version=device_type.capitalize(),
-                # Add device type as software version for clarity.
             )
 
         self._last_updated = None
@@ -1225,14 +1219,11 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
             self._attr_name = cast("str | None", self.entity_description.name)
 
             # And device_info
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, self._device.address)},
+            self._attr_device_info = build_device_info(
+                address=self._device.address,
                 name=self._device.name,
-                manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
-                hw_version=f"BLE Address: {self._device.address}",
-                sw_version=self._device_type.capitalize(),
-                # Add device type as software version.
+                device=self._device,
             )
             LOGGER.debug("Updated device info with real name: %s", self._device.name)
 
