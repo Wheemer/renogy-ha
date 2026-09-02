@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -16,6 +17,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
@@ -33,6 +35,7 @@ from .firmware import (
 
 FIRMWARE_CHECK_INTERVAL = timedelta(hours=12)
 FIRMWARE_INITIAL_CHECK_DELAY_SECONDS = 30
+FIRMWARE_ERROR_RETRY_SECONDS = 15 * 60
 POST_UPDATE_RETRY_SECONDS = 10
 POST_UPDATE_RETRIES = 9
 
@@ -54,11 +57,13 @@ class RenogyFirmwareManager:
         self.client = RenogyFirmwareClient(async_get_clientsession(hass))
         self.release: RenogyFirmwareRelease | None = None
         self.last_error: str | None = None
+        self.catalog_checked = False
         self._listeners: list[Callable[[], None]] = []
         self._refresh_lock = asyncio.Lock()
         self._initial_refresh_task: asyncio.Task[Any] | None = None
         self._unsub_interval: Callable[[], None] | None = None
         self._unsub_started: Callable[[], None] | None = None
+        self._last_refresh_attempt: float | None = None
 
     async def async_load(self) -> None:
         """Load stored tokens without contacting Renogy."""
@@ -115,7 +120,12 @@ class RenogyFirmwareManager:
     def async_device_updated(self) -> None:
         """Publish installed-version changes and retry an initially skipped check."""
         self._notify_listeners()
-        if self.release is None and self.client.auth is not None:
+        retry_due = (
+            self._last_refresh_attempt is None
+            or time.monotonic() - self._last_refresh_attempt
+            >= FIRMWARE_ERROR_RETRY_SECONDS
+        )
+        if not self.catalog_checked and self.client.auth is not None and retry_due:
             self._schedule_initial_refresh(delay=2)
 
     async def async_refresh(self) -> None:
@@ -124,15 +134,18 @@ class RenogyFirmwareManager:
             self._notify_listeners()
             return
         async with self._refresh_lock:
+            self._last_refresh_attempt = time.monotonic()
             try:
                 self.release = await self.client.async_get_latest_release(
                     ROVER_30_SKU, CONTROLLER_TYPE_ID
                 )
                 self.last_error = None
+                self.catalog_checked = True
                 if self.client.auth is not None:
                     await self.store.async_save(self.client.auth)
             except RenogyFirmwareError as err:
                 self.last_error = str(err)
+                self.catalog_checked = False
                 LOGGER.warning("Renogy firmware check failed: %s", err)
             self._notify_listeners()
 
@@ -196,6 +209,7 @@ class RenogyControllerFirmwareUpdate(UpdateEntity):
     """Represent official firmware offered for a Renogy Rover 30."""
 
     _attr_device_class = UpdateDeviceClass.FIRMWARE
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_name = "Firmware"
     _attr_title = "Renogy Rover firmware"
     _attr_supported_features = (
@@ -242,6 +256,7 @@ class RenogyControllerFirmwareUpdate(UpdateEntity):
         return {
             "firmware_sku": ROVER_30_SKU,
             "catalog_configured": self.manager.client.auth is not None,
+            "catalog_checked": self.manager.catalog_checked,
             "catalog_error": self.manager.last_error,
         }
 
