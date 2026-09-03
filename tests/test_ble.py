@@ -526,6 +526,143 @@ def test_controller_static_commands_are_throttled_to_120_seconds():
     assert commands["controller_identity"] == (3, 0x0014, 6)
 
 
+def test_controller_holds_one_open_circuit_zero_sample() -> None:
+    """One isolated controller zero frame should not create false entity drops."""
+    ble_module = _load_ble_module()
+    coordinator = ble_module.RenogyActiveBluetoothCoordinator(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        address="AA:BB:CC:DD:EE:FF",
+        scan_interval=15,
+        device_type="controller",
+    )
+    previous_data = {
+        "pv_power": 198,
+        "pv_current": 4.98,
+        "battery_current": 14.07,
+        "charging_status": "mppt",
+    }
+    parsed_data = {
+        "pv_power": 0,
+        "pv_current": 0,
+        "pv_voltage": 49.2,
+        "battery_current": 0,
+        "battery_voltage": 13.5,
+        "charging_status": "deactivated",
+    }
+
+    coordinator._stabilize_controller_live_data(parsed_data, previous_data)
+
+    assert parsed_data["pv_power"] == 198
+    assert parsed_data["pv_current"] == 4.98
+    assert parsed_data["battery_current"] == 14.07
+    assert parsed_data["charging_status"] == "mppt"
+
+
+def test_controller_publishes_two_consecutive_open_circuit_zero_samples() -> None:
+    """A confirmed controller shutdown must still be published."""
+    ble_module = _load_ble_module()
+    coordinator = ble_module.RenogyActiveBluetoothCoordinator(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        address="AA:BB:CC:DD:EE:FF",
+        scan_interval=15,
+        device_type="controller",
+    )
+    previous_data = {
+        "pv_power": 198,
+        "pv_current": 4.98,
+        "battery_current": 14.07,
+        "charging_status": "mppt",
+    }
+    first_sample = {
+        "pv_power": 0,
+        "pv_current": 0,
+        "pv_voltage": 49.2,
+        "battery_current": 0,
+        "battery_voltage": 13.5,
+        "charging_status": "deactivated",
+    }
+    second_sample = dict(first_sample)
+
+    coordinator._stabilize_controller_live_data(first_sample, previous_data)
+    coordinator._stabilize_controller_live_data(second_sample, previous_data)
+
+    assert second_sample["pv_power"] == 0
+    assert second_sample["pv_current"] == 0
+    assert second_sample["battery_current"] == 0
+    assert second_sample["charging_status"] == "deactivated"
+
+
+def test_controller_publishes_nighttime_zero_immediately() -> None:
+    """A zero sample without open-circuit panel voltage is genuine telemetry."""
+    ble_module = _load_ble_module()
+    coordinator = ble_module.RenogyActiveBluetoothCoordinator(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        address="AA:BB:CC:DD:EE:FF",
+        scan_interval=15,
+        device_type="controller",
+    )
+    parsed_data = {
+        "pv_power": 0,
+        "pv_current": 0,
+        "pv_voltage": 0,
+        "battery_current": 0,
+        "battery_voltage": 13.2,
+        "charging_status": "deactivated",
+    }
+
+    coordinator._stabilize_controller_live_data(
+        parsed_data,
+        {"pv_power": 25, "charging_status": "mppt"},
+    )
+
+    assert parsed_data["pv_power"] == 0
+    assert parsed_data["charging_status"] == "deactivated"
+
+
+def test_interval_scheduler_is_the_only_poll_owner() -> None:
+    """Bluetooth advertisements must not trigger a second polling schedule."""
+    ble_module = _load_ble_module()
+    coordinator = ble_module.RenogyActiveBluetoothCoordinator(
+        hass=MagicMock(),
+        logger=MagicMock(),
+        address="AA:BB:CC:DD:EE:FF",
+        scan_interval=15,
+        device_type="controller",
+    )
+
+    assert coordinator._needs_poll(MagicMock(), None) is False
+
+
+def test_async_start_unsubscribes_parent_bluetooth_coordinator() -> None:
+    """Config-entry unload must remove the inherited Bluetooth callback."""
+    ble_module = _load_ble_module()
+    hass = MagicMock()
+    hass.state = ble_module.CoreState.running
+    hass.async_create_task.side_effect = lambda coro: coro.close()
+    coordinator = ble_module.RenogyActiveBluetoothCoordinator(
+        hass=hass,
+        logger=MagicMock(),
+        address="AA:BB:CC:DD:EE:FF",
+        scan_interval=15,
+        device_type="controller",
+    )
+    parent_unsub = MagicMock()
+
+    with patch.object(
+        ble_module.ActiveBluetoothDataUpdateCoordinator,
+        "async_start",
+        return_value=parent_unsub,
+    ):
+        unsub = coordinator.async_start()
+        unsub()
+
+    parent_unsub.assert_called_once_with()
+    assert coordinator._active_bluetooth_unsub is None
+
+
 def test_controller_identity_response_parses_versions_and_serial_number():
     """The integration reads the Rover identity block omitted by renogy-ble."""
     ble_module = _load_ble_module()

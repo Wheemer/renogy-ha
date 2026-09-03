@@ -100,6 +100,7 @@ BLE_FAILURE_CACHE_CLEAR_TIMEOUT_SECONDS = 5.0
 # The controller "pv" command carries the live telemetry used by HA control.
 # Keep separate identity/config commands slower to reduce BLE/GATT load.
 CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS = 120
+CONTROLLER_TRANSIENT_ZERO_CONFIRMATIONS = 2
 CONTROLLER_LIVE_COMMAND_NAMES = ("pv",)
 CONTROLLER_STATIC_COMMAND_NAMES = ("device_info", "device_id", "battery")
 CONTROLLER_IDENTITY_COMMAND_NAME = "controller_identity"
@@ -239,6 +240,7 @@ class RenogyActiveBluetoothCoordinator(
         self._update_listeners: list[Callable[[], None]] = []
         self.update_interval = timedelta(seconds=scan_interval)
         self._unsub_refresh = None
+        self._active_bluetooth_unsub: Callable[[], None] | None = None
         self._request_refresh_task = None
 
         # Add connection lock to prevent multiple concurrent connections
@@ -247,6 +249,7 @@ class RenogyActiveBluetoothCoordinator(
         self._connection_in_progress = False
         self._last_controller_static_attempt = 0.0
         self._last_controller_static_refresh = 0.0
+        self._controller_transient_zero_count = 0
 
         # Warn only once when the reported model contradicts the configured type
         self._model_mismatch_warned = False
@@ -326,6 +329,66 @@ class RenogyActiveBluetoothCoordinator(
     def _controller_static_data_refreshed(self, parsed_data: dict[str, Any]) -> bool:
         """Return whether this poll actually yielded controller static data."""
         return any(key in parsed_data for key in CONTROLLER_STATIC_RESULT_KEYS)
+
+    def _stabilize_controller_live_data(
+        self, parsed_data: dict[str, Any], previous_data: dict[str, Any]
+    ) -> None:
+        """Suppress one controller-originated open-circuit zero sample."""
+        if self.device_type != DeviceType.CONTROLLER.value:
+            return
+
+        pv_power = parsed_data.get("pv_power")
+        pv_current = parsed_data.get("pv_current")
+        battery_current = parsed_data.get("battery_current")
+        pv_voltage = parsed_data.get("pv_voltage")
+        battery_voltage = parsed_data.get("battery_voltage")
+        previous_power = previous_data.get("pv_power")
+        values = (
+            pv_power,
+            pv_current,
+            battery_current,
+            pv_voltage,
+            battery_voltage,
+            previous_power,
+        )
+        if not all(isinstance(value, (int, float)) for value in values):
+            self._controller_transient_zero_count = 0
+            return
+
+        numeric_pv_voltage = float(cast(int | float, pv_voltage))
+        numeric_battery_voltage = float(cast(int | float, battery_voltage))
+        numeric_previous_power = float(cast(int | float, previous_power))
+
+        open_circuit_zero = (
+            pv_power == 0
+            and pv_current == 0
+            and battery_current == 0
+            and numeric_previous_power > 0
+            and numeric_pv_voltage > numeric_battery_voltage + 2
+        )
+        if not open_circuit_zero:
+            self._controller_transient_zero_count = 0
+            return
+
+        self._controller_transient_zero_count += 1
+        if (
+            self._controller_transient_zero_count
+            >= CONTROLLER_TRANSIENT_ZERO_CONFIRMATIONS
+        ):
+            return
+
+        for key in ("pv_power", "pv_current", "battery_current", "charging_status"):
+            if key in previous_data:
+                parsed_data[key] = previous_data[key]
+        self.logger.debug(
+            "Held transient controller zero sample %s/%s for %s "
+            "(PV %.1fV, battery %.1fV)",
+            self._controller_transient_zero_count,
+            CONTROLLER_TRANSIENT_ZERO_CONFIRMATIONS,
+            self.address,
+            numeric_pv_voltage,
+            numeric_battery_voltage,
+        )
 
     def _uses_sustained_shunt_listener(self, device_type: str | None = None) -> bool:
         """Return whether this coordinator should keep a sustained shunt listener."""
@@ -481,6 +544,9 @@ class RenogyActiveBluetoothCoordinator(
             if self._unsub_refresh:
                 self._unsub_refresh()
                 self._unsub_refresh = None
+            if self._active_bluetooth_unsub:
+                self._active_bluetooth_unsub()
+                self._active_bluetooth_unsub = None
 
         _unsub()  # Cancel any previous subscriptions
 
@@ -517,7 +583,7 @@ class RenogyActiveBluetoothCoordinator(
 
         # We use the active update coordinator's start method
         # which already handles the bluetooth subscriptions
-        result = super().async_start()
+        self._active_bluetooth_unsub = super().async_start()
 
         # Schedule regular refreshes at our configured interval
         self._schedule_refresh()
@@ -525,7 +591,7 @@ class RenogyActiveBluetoothCoordinator(
         # Perform an initial refresh to get data as soon as possible
         self.hass.async_create_task(self.async_request_refresh())
 
-        return result
+        return _unsub
 
     def _async_cancel_bluetooth_subscription(self) -> None:
         """Cancel the bluetooth subscription."""
@@ -554,6 +620,10 @@ class RenogyActiveBluetoothCoordinator(
         if self._shunt_listener_task is not None:
             self._shunt_listener_task.cancel()
             self._shunt_listener_task = None
+
+        if self._active_bluetooth_unsub:
+            self._active_bluetooth_unsub()
+            self._active_bluetooth_unsub = None
 
         self._async_cancel_bluetooth_subscription()
 
@@ -624,9 +694,7 @@ class RenogyActiveBluetoothCoordinator(
                             controller_address = raw_address
                     await RenogyOtaProtocol(
                         ota_client, controller_address=controller_address
-                    ).async_update(
-                        firmware, progress_callback
-                    )
+                    ).async_update(firmware, progress_callback)
                 except RenogyFirmwareError:
                     raise
                 except (BleakError, TimeoutError) as err:
@@ -637,7 +705,7 @@ class RenogyActiveBluetoothCoordinator(
                     if ota_client is not None and ota_client.is_connected:
                         try:
                             await asyncio.wait_for(ota_client.disconnect(), timeout=5)
-                        except (BleakError, TimeoutError):
+                        except BleakError, TimeoutError:
                             self.logger.debug(
                                 "Could not cleanly disconnect firmware client for %s",
                                 self.address,
@@ -776,46 +844,8 @@ class RenogyActiveBluetoothCoordinator(
         service_info: BluetoothServiceInfoBleak,
         last_poll: float | None,
     ) -> bool:
-        """Determine if device needs polling based on time since last poll."""
-        if self._uses_sustained_shunt_listener():
-            return False
-
-        # Only poll if hass is running and device is connectable
-        if self.hass.state != CoreState.running:
-            return False
-
-        # Check if we have a connectable device
-        connectable_device = bluetooth.async_ble_device_from_address(
-            self.hass, service_info.device.address, connectable=True
-        )
-        if not connectable_device:
-            self.logger.warning(
-                "No connectable device found for %s", service_info.address
-            )
-            return False
-
-        # If a connection is already in progress, don't start another one
-        if self._connection_in_progress:
-            self.logger.debug("Connection already in progress, skipping poll")
-            return False
-
-        # If we've never polled or it's been longer than the scan interval, poll
-        if last_poll is None:
-            self.logger.debug("First poll for device %s", service_info.address)
-            return True
-
-        # Check if enough time has elapsed since the last poll
-        time_since_poll = datetime.now().timestamp() - last_poll
-        should_poll = time_since_poll >= self.scan_interval
-
-        if should_poll:
-            self.logger.debug(
-                "Time to poll device %s after %.1fs",
-                service_info.address,
-                time_since_poll,
-            )
-
-        return should_poll
+        """Leave polling to the integration's single interval scheduler."""
+        return False
 
     def _process_sustained_shunt_notification(self, data: bytes) -> bool:
         """Parse and publish one sustained Smart Shunt notification payload."""
@@ -1247,6 +1277,11 @@ class RenogyActiveBluetoothCoordinator(
                         original_commands, dict
                     ):
                         self._ble_client._commands = original_commands
+
+                if success and device.parsed_data:
+                    self._stabilize_controller_live_data(
+                        device.parsed_data, previous_data
+                    )
 
                 # Keep entities available until the configured failure threshold.
                 self._record_poll_availability(success, error)
