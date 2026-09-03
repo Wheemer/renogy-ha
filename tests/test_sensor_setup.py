@@ -441,6 +441,20 @@ def test_controller_uses_estimated_soc_entity() -> None:
     assert estimated.native_value == 90.0
 
 
+def test_controller_exposes_fault_diagnostics() -> None:
+    """Controller alarm data is visible without changing existing sensors."""
+    sensor_module = _load_sensor_module()
+    descriptions = {
+        description.key: description for description in sensor_module.CONTROLLER_SENSORS
+    }
+
+    assert descriptions[sensor_module.KEY_CONTROLLER_STATUS].name == "Controller Status"
+    assert (
+        descriptions[sensor_module.KEY_CONTROLLER_FAULT_CODE].name
+        == "Controller Fault Code"
+    )
+
+
 def test_estimated_soc_restore_prevents_reload_jump() -> None:
     """A reload resumes from the recorded SOC instead of jumping to the curve."""
     sensor_module = _load_sensor_module()

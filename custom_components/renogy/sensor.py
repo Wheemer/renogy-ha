@@ -75,6 +75,8 @@ KEY_CONTROLLER_TEMPERATURE = "controller_temperature"
 KEY_DEVICE_ID = "device_id"
 KEY_MODEL = "model"
 KEY_MAX_DISCHARGING_POWER_TODAY = "max_discharging_power_today"
+KEY_CONTROLLER_STATUS = "controller_status"
+KEY_CONTROLLER_FAULT_CODE = "controller_fault_code"
 
 # DCC-specific sensor keys (DC-DC Charger)
 KEY_BATTERY_SOC = "battery_soc"
@@ -532,6 +534,18 @@ LOAD_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
 )
 
 CONTROLLER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
+    RenogyBLESensorDescription(
+        key=KEY_CONTROLLER_STATUS,
+        name="Controller Status",
+        device_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_CONTROLLER_FAULT_CODE,
+        name="Controller Fault Code",
+        device_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     RenogyBLESensorDescription(
         key=KEY_CONTROLLER_TEMPERATURE,
         name="Controller Temperature",
@@ -1469,6 +1483,20 @@ class RenogyBLESensor(PassiveBluetoothCoordinatorEntity, RestoreEntity, SensorEn
             attrs["data_source"] = "device"
         elif self.coordinator.data:
             attrs["data_source"] = "coordinator"
+
+        if self.entity_description.key == KEY_CONTROLLER_STATUS:
+            controller_data = self._current_data()
+            if controller_data:
+                attrs.update(
+                    {
+                        "active_faults": controller_data.get(
+                            "controller_active_faults", []
+                        ),
+                        "fault_code": controller_data.get("controller_fault_code"),
+                        "fault_high": controller_data.get("controller_fault_high"),
+                        "fault_low": controller_data.get("controller_fault_low"),
+                    }
+                )
 
         if self._device_type == DeviceType.SHUNT300.value:
             shunt_data = None

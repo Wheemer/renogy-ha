@@ -509,7 +509,8 @@ def test_controller_static_commands_are_throttled_to_120_seconds():
         commands, static_due = coordinator._controller_commands_for_poll()
 
     assert static_due is False
-    assert list(commands) == ["pv"]
+    assert list(commands) == ["pv", "controller_faults"]
+    assert commands["controller_faults"] == (3, 0x0121, 2)
     assert coordinator.scan_interval == 15
 
     with patch.object(ble_module.time, "monotonic", return_value=220.0):
@@ -521,6 +522,7 @@ def test_controller_static_commands_are_throttled_to_120_seconds():
         "device_info",
         "device_id",
         "battery",
+        "controller_faults",
         "controller_identity",
     ]
     assert commands["controller_identity"] == (3, 0x0014, 6)
@@ -688,6 +690,65 @@ def test_controller_identity_response_rejects_bad_crc():
     corrupt_frame = bytes((1, 3, len(payload))) + payload + b"\x00\x00"
 
     assert ble_module._parse_controller_identity_response(corrupt_frame) is None
+
+
+def test_controller_fault_response_decodes_app_alarm_bits():
+    """Controller faults use the Renogy app's C0-C19 alarm layout."""
+    ble_module = _load_ble_module()
+    payload = bytes.fromhex("00040201")
+    frame_without_crc = bytes((1, 3, len(payload))) + payload
+    crc_low, crc_high = ble_module._modbus_crc(frame_without_crc)
+
+    parsed = ble_module._parse_controller_fault_response(
+        frame_without_crc + bytes((crc_low, crc_high))
+    )
+
+    assert parsed == {
+        "controller_status": "fault",
+        "controller_fault_code": 0x00040201,
+        "controller_fault_high": 4,
+        "controller_fault_low": 0x0201,
+        "controller_active_faults": [
+            "Battery overdischarge",
+            "Solar overvoltage",
+            "Battery short circuit protection",
+        ],
+    }
+
+
+def test_controller_fault_response_rejects_bad_crc():
+    """Corrupt controller fault frames must not become entity values."""
+    ble_module = _load_ble_module()
+    corrupt_frame = bytes.fromhex("010304000000000000")
+
+    assert ble_module._parse_controller_fault_response(corrupt_frame) is None
+
+
+def test_controller_fault_logging_only_reports_transitions():
+    """Fault polling must not repeat the same warning every ten seconds."""
+    ble_module = _load_ble_module()
+    logger = MagicMock()
+    coordinator = ble_module.RenogyActiveBluetoothCoordinator(
+        hass=MagicMock(),
+        logger=logger,
+        address="AA:BB:CC:DD:EE:FF",
+        scan_interval=10,
+        device_type="controller",
+    )
+    coordinator.data = {
+        "controller_fault_code": 1,
+        "controller_active_faults": ["Battery overdischarge"],
+    }
+
+    coordinator._log_controller_fault_transition()
+    coordinator._log_controller_fault_transition()
+
+    logger.warning.assert_called_once()
+    coordinator.data = {"controller_fault_code": 0, "controller_active_faults": []}
+    coordinator._log_controller_fault_transition()
+    logger.info.assert_called_once_with(
+        "Renogy controller %s faults cleared", coordinator.address
+    )
 
 
 def test_poll_skips_connection_during_unavailable_retry_cooldown():

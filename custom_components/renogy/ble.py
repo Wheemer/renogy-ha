@@ -101,6 +101,10 @@ BLE_FAILURE_CACHE_CLEAR_TIMEOUT_SECONDS = 5.0
 # Keep separate identity/config commands slower to reduce BLE/GATT load.
 CONTROLLER_STATIC_REFRESH_INTERVAL_SECONDS = 120
 CONTROLLER_TRANSIENT_ZERO_CONFIRMATIONS = 2
+CONTROLLER_FAULT_COMMAND_NAME = "controller_faults"
+CONTROLLER_FAULT_COMMAND = (3, 0x0121, 2)
+CONTROLLER_FAULT_START_REGISTER = 0x0121
+CONTROLLER_FAULT_WORD_COUNT = 2
 CONTROLLER_LIVE_COMMAND_NAMES = ("pv",)
 CONTROLLER_STATIC_COMMAND_NAMES = ("device_info", "device_id", "battery")
 CONTROLLER_IDENTITY_COMMAND_NAME = "controller_identity"
@@ -114,6 +118,28 @@ CONTROLLER_STATIC_RESULT_KEYS = (
     "sw_version",
     "hw_version",
     "serial_number",
+)
+CONTROLLER_FAULT_NAMES = (
+    "Battery overdischarge",
+    "Battery overvoltage",
+    "Battery undervoltage warning",
+    "Load short circuit",
+    "Load overload or overcurrent",
+    "Controller temperature too high",
+    "External temperature too high",
+    "Solar overload",
+    "Solar short circuit",
+    "Solar overvoltage",
+    "Solar reverse current",
+    "Solar working point overvoltage",
+    "Solar reverse protection",
+    "Battery reverse polarity protection",
+    "MOS short circuit",
+    "Fan alarm",
+    "Battery under temperature protection",
+    "Battery over temperature protection",
+    "Battery short circuit protection",
+    "Anti-reverse battery connection protection",
 )
 
 
@@ -154,8 +180,39 @@ def _parse_controller_identity_response(raw_data: bytes) -> dict[str, Any] | Non
     }
 
 
+def _parse_controller_fault_response(raw_data: bytes) -> dict[str, Any] | None:
+    """Parse controller alarm registers 0x0121 and 0x0122."""
+    if len(raw_data) < 5 or raw_data[1] != 3:
+        return None
+
+    byte_count = raw_data[2]
+    expected_byte_count = CONTROLLER_FAULT_WORD_COUNT * 2
+    frame_length = 3 + byte_count + 2
+    if byte_count != expected_byte_count or len(raw_data) < frame_length:
+        return None
+
+    crc_low, crc_high = _modbus_crc(raw_data[: 3 + byte_count])
+    if raw_data[3 + byte_count : frame_length] != bytes((crc_low, crc_high)):
+        return None
+
+    fault_high = int.from_bytes(raw_data[3:5], "big")
+    fault_low = int.from_bytes(raw_data[5:7], "big")
+    fault_code = (fault_high << 16) | fault_low
+    return {
+        "controller_status": "fault" if fault_code else "normal",
+        "controller_fault_code": fault_code,
+        "controller_fault_high": fault_high,
+        "controller_fault_low": fault_low,
+        "controller_active_faults": [
+            name
+            for bit, name in enumerate(CONTROLLER_FAULT_NAMES)
+            if fault_code & (1 << bit)
+        ],
+    }
+
+
 class RenogyIntegrationBLEDevice(RenogyBLEDevice):
-    """Renogy device with parsing for controller identity diagnostics."""
+    """Renogy device with integration-owned controller diagnostics."""
 
     def update_parsed_data(
         self, raw_data: bytes, register: int, cmd_name: str = "unknown"
@@ -167,6 +224,17 @@ class RenogyIntegrationBLEDevice(RenogyBLEDevice):
             and cmd_name == CONTROLLER_IDENTITY_COMMAND_NAME
         ):
             parsed = _parse_controller_identity_response(raw_data)
+            if parsed is None:
+                return False
+            self.parsed_data.update(parsed)
+            return True
+
+        if (
+            self.device_type == DeviceType.CONTROLLER.value
+            and register == CONTROLLER_FAULT_START_REGISTER
+            and cmd_name == CONTROLLER_FAULT_COMMAND_NAME
+        ):
+            parsed = _parse_controller_fault_response(raw_data)
             if parsed is None:
                 return False
             self.parsed_data.update(parsed)
@@ -250,6 +318,7 @@ class RenogyActiveBluetoothCoordinator(
         self._last_controller_static_attempt = 0.0
         self._last_controller_static_refresh = 0.0
         self._controller_transient_zero_count = 0
+        self._last_controller_fault_code: int | None = None
 
         # Warn only once when the reported model contradicts the configured type
         self._model_mismatch_warned = False
@@ -322,6 +391,7 @@ class RenogyActiveBluetoothCoordinator(
             for name in command_names
             if name in controller_commands
         }
+        commands[CONTROLLER_FAULT_COMMAND_NAME] = CONTROLLER_FAULT_COMMAND
         if static_due:
             commands[CONTROLLER_IDENTITY_COMMAND_NAME] = CONTROLLER_IDENTITY_COMMAND
         return commands or None, static_due
@@ -1301,11 +1371,38 @@ class RenogyActiveBluetoothCoordinator(
                     device.parsed_data = merged_data
                     self.data = merged_data
                     self.logger.debug("Updated coordinator data: %s", self.data)
+                    self._log_controller_fault_transition()
                     self._warn_if_model_mismatch()
 
                 return success
             finally:
                 self._connection_in_progress = False
+
+    def _log_controller_fault_transition(self) -> None:
+        """Log controller fault changes once instead of on every poll."""
+        if self.device_type != DeviceType.CONTROLLER.value or not self.data:
+            return
+
+        raw_fault_code = self.data.get("controller_fault_code")
+        if raw_fault_code is None:
+            return
+
+        fault_code = int(raw_fault_code)
+        if fault_code == self._last_controller_fault_code:
+            return
+
+        previous_fault_code = self._last_controller_fault_code
+        self._last_controller_fault_code = fault_code
+        if fault_code:
+            active_faults = self.data.get("controller_active_faults", [])
+            self.logger.warning(
+                "Renogy controller %s reports fault 0x%08X: %s",
+                self.address,
+                fault_code,
+                ", ".join(active_faults) if active_faults else "unknown fault",
+            )
+        elif previous_fault_code:
+            self.logger.info("Renogy controller %s faults cleared", self.address)
 
     def _warn_if_model_mismatch(self) -> None:
         """Warn once when the reported model implies a different device type.
